@@ -1,0 +1,18 @@
+[MPIPreferences]
+__clear__ = ["preloads_env_switch"]
+_format = "1.0"
+abi = "OpenMPI"
+binary = "system"
+cclibs = []
+libmpi = "libmpi"
+mpiexec = "mpiexec"
+preloads = []
+
+[P4est]
+libp4est = "/home/gridsan/mleprovost/julia/p4est_build/lib/libp4est.so"
+libsc = "/home/gridsan/mleprovost/julia/p4est_build/lib/libsc.so"
+
+[T8code]
+libp4est = "/home/gridsan/mleprovost/julia/t8code_build/lib/libp4est.so"
+libsc = "/home/gridsan/mleprovost/julia/t8code_build/lib/libsc.so"
+libt8 = "/home/gridsan/mleprovost/julia/t8code_build/lib/libt8.so"
