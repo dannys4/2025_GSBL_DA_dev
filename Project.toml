@@ -7,11 +7,8 @@ version = "0.1.0"
 BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 ClusterManagers = "34f1f09b-3a8b-5176-ab39-66d58a4d544e"
-<<<<<<< HEAD
 DifferentialEquations = "0c46a032-eb83-5123-abaf-570d42b7fbaa"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
-=======
->>>>>>> 9dafdcd87b436db3c5f8e3e21e690d6324cec1e8
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 FastGaussQuadrature = "442a2c76-b920-505d-bb47-c5924d526838"
