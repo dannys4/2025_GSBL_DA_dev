@@ -1,4 +1,4 @@
-import TransportBasedInference: SeqFilter
+import TransportBasedInference2: SeqFilter
 
 export LocEnKF
 

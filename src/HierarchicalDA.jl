@@ -16,7 +16,7 @@ using SpecialFunctions
 using StaticArrays
 using StatsBase
 using Statistics
-using TransportBasedInference
+using TransportBasedInference2
 using Trixi
 using UnPack
 
