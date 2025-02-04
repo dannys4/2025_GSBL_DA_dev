@@ -1,6 +1,5 @@
 module HierarchicalDA
 
-# using ApproxFun
 using BandedMatrices
 using DocStringExtensions
 using Distributions
@@ -35,9 +34,6 @@ include("tools/crps.jl")
 
 include("distributions/generalized_gamma.jl")
 include("distributions/extended_gamma.jl")
-# include("distributions/GeneralizedGamma.jl")
-# include("distributions/WikiGeneralizedGamma.jl"
-# include("filters/hierarchical_gamma.jl")
 
 
 include("PA/PA.jl")
@@ -52,7 +48,6 @@ include("update_x/obs_system.jl")
 include("update_x/obs_constraint_system.jl")
 
 include("update_x/covariance.jl")
-# include("update_x/update_x.jl")
 
 include("update_x/enkf.jl")
 include("update_x/localized_enkf.jl")
@@ -67,7 +62,7 @@ include("trixi/trixi_system.jl")
 include("trixi/generate_data.jl")
 include("trixi/seqassim_trixi.jl")
 
-# Linear advection 
+# Linear advection
 include("linear_advection/linear_advection.jl")
 
 # Inviscid Burgers
@@ -77,11 +72,6 @@ include("inviscid_burgers/inviscid_burgers.jl")
 include("euler/euler.jl")
 include("euler/seqassim_trixi_euler.jl")
 
-# Shallow water equation
-# include()
-
-# Korteweg de Vries
-# include("kdv/kdv.jl")
 
 
 
