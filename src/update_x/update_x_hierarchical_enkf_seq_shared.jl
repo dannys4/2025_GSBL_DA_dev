@@ -1,5 +1,7 @@
 # In this version, there is a jump coefficient θ shared across the ensemble members, 
 # and we first assimilate the observations before to assimilate the regularization term
+getĈX(enkf::HEnKF, X) = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix = true)
+getĈX(enkf::HLocEnKF, X) = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix = true)
 
 function update_x!(
     enkf::Union{HEnKF,HLocEnKF},
@@ -28,11 +30,7 @@ function update_x!(
 
     si = zeros(enkf.sys.Ns)
 
-    if typeof(enkf) <: HEnKF
-        ĈX = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix = true)
-    elseif typeof(enkf) <: HLocEnKF
-        ĈX = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix = true)
-    end
+    ĈX = getĈX(enkf, X)
 
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
@@ -44,13 +42,13 @@ function update_x!(
     # Update covariance matrix
     enkf.sys.CX[1] = ĈX_op
 
-    # Update weight vector θ
-    if typeof(enkf.sys.Cθ) <: LinearMaps.LinearMaps.WrappedMap{Float64}
-        enkf.θ .= θ
-        enkf.sys.Cθ.lmap.diag .= θ
-    else
-        error("Wrong type for Cθ")
+    if !typeof(enkf.sys.Cθ) <: LinearMaps.LinearMaps.WrappedMap{Float64}
+        throw(ArgumentError("Wrong type for Cθ"))
     end
+
+    # Update weight vector θ
+    enkf.θ .= θ
+    enkf.sys.Cθ.lmap.diag .= θ
 
     sys_op = LinearMaps.FunctionMap{Float64,true}(
         (y, x) -> mul!(y, enkf.sys, x),
@@ -68,9 +66,7 @@ function update_x!(
             ei[i] = 1.0
             sys_mat[:, i] = sys_op * ei
         end
-
-        # @show cond(sys_mat)
-        sys_mat = factorize(Symmetric(sys_mat))
+        sys_mat = factorize(Hermitian(sys_mat))
     end
 
 
@@ -98,18 +94,10 @@ function update_x!(
         tmp.x[2] .= ys_i.x[2]
 
         if enkf.isiterative == false
-
             ys_i .= sys_mat \ tmp
-
         else
-
             # Invert sys_op
-            # ldiv!(ys_i, sys_mat, ys_i)
-            # @show typeof(ys_i)
-            # @show cg(sys_op, ys_i; log = true)[2]/
-            # @show cg(sys_op, tmp; log = true, reltol = 1e-3)
             cg!(ys_i, sys_op, tmp; log = false, reltol = 1e-3)
-
         end
 
         δi .= enkf.sys.H' * observation(ys_i)
