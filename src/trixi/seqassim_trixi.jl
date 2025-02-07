@@ -37,8 +37,9 @@ function seqassim_trixi(
     Acycle = n0:n0+J-1
     tspan = (t0, t0 + algo.Δtobs)
 
-    x_ode = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
-    tmp = zero(x_ode)
+    x_ode_p = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
+    # create x_ode_p for each thread
+    x_ode_q = similar(x_ode_p)
 
     prob = semidiscretize(sys.semi, tspan)
 
@@ -65,11 +66,11 @@ function seqassim_trixi(
             # for k in eachindex(x_ode)
             #     x_ode[k] = SVector{1}(X[Ny+k, j])
             # end
-            vec2sol!(x_ode, X[Ny+1:Ny+Nx, j], sys.equations; g = prim2cons)
+            vec2sol!(x_ode_p, X[Ny+1:Ny+Nx, j], deepcopy(sys.equations); g = prim2cons)
             # We need to move them to the Lobatto-Legendre nodes
-            mul!(x_ode, sys.dg.basis.Pq, x_ode)
+            mul!(x_ode_q, sys.dg.basis.Pq, x_ode_p)
 
-            remake(prob, u0 = x_ode, tspan = tspan)
+            remake(prob, u0 = x_ode_q, tspan = tspan)
         end
 
         ensemble_prob = EnsembleProblem(
@@ -82,18 +83,17 @@ function seqassim_trixi(
             ensemble_prob,
             SSPRK43(),
             adaptive = true,
-            EnsembleThreads(),
+            EnsembleSerial(),
             trajectories = Ne,
             dense = false,
             save_everystep = false,
-            callback = callbacks,
+            callback = stepsize_callback,
         )
 
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
-            mul!(x_ode, sys.dg.basis.Vq, sim[i])
-            # X[Ny+1:Ny+Nx, i] .= vcat(x_ode...)
-            sol2vec!(view(X, Ny+1:Ny+Nx, i), x_ode, sys.equations; g = cons2prim)
+            mul!(x_ode_p, sys.dg.basis.Vq, sim[i])
+            sol2vec!(view(X, Ny+1:Ny+Nx, i), x_ode_p, sys.equations; g = cons2prim)
         end
 
         # Assimilation # Get real measurement # Fix this later # Things are shifted in data.yt

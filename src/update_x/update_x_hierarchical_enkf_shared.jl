@@ -75,8 +75,8 @@ function update_x!(
 
     # Compute Kalman-update in a matrix-free way
 
-    ys_i = ObsCoNztraintVector(Ny, Nz)
-    tmp = ObsCoNztraintVector(Ny, Nz)
+    ys_i = ObsConstraintVector(Ny, Nz)
+    tmp = ObsConstraintVector(Ny, Nz)
 
     δi = zeros(Nx)
 
@@ -84,7 +84,7 @@ function update_x!(
     for i = 1:Ne
         xi = view(X, Ny+1:Ny+Nx, i)
         yi = observation(ys_i)
-        si = coNztraint(ys_i)
+        si = constraint(ys_i)
 
         mul!(yi, enkf.sys.H, xi)
         @assert isapprox(ys_i.x[1], enkf.sys.H * xi, atol = 1e-8)
@@ -112,7 +112,7 @@ function update_x!(
         end
 
         δi .= enkf.sys.H' * observation(ys_i)
-        δi .+= enkf.sys.S' * coNztraint(ys_i)
+        δi .+= enkf.sys.S' * constraint(ys_i)
 
         xi .+= -(ĈX * δi)
     end

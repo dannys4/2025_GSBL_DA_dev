@@ -151,7 +151,7 @@ function (enkf::Union{HEnKF,HLocEnKF})(
 
     if enkf.isθshared == true
         # enkf.θ .= rand(enkf.dist, enkf.sys.Ns)
-        enkf.θ .= one(enkf.sys.Ns)
+        enkf.θ .= one(enkf.sys.Nz)
         θold = zero(enkf.θ)
         for n = 1:Niter
             copy!(θold, enkf.θ)
