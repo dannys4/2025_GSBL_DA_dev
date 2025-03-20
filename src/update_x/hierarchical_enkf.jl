@@ -46,6 +46,12 @@ struct HEnKF <: SeqFilter
 
     "Boolean: is state vector filtered"
     isfiltered::Bool
+
+    "Number of optimization (ALS) steps"
+    Niter::Int
+
+    "Relative tolerance of ALS optimization"
+    rtolθ::Float64
 end
 
 function HEnKF(
@@ -58,7 +64,9 @@ function HEnKF(
     Δtdyn,
     Δtobs;
     isiterative = false,
-    isfiltered = false
+    isfiltered = false,
+    Niter::Int = 40,
+    rtolθ::Float64 = 1e-4
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -81,7 +89,9 @@ function HEnKF(
         Δtobs,
         isθshared,
         isiterative,
-        isfiltered
+        isfiltered,
+        Niter,
+        rtolθ,
     )
 end
 
@@ -93,7 +103,9 @@ function HEnKF(
     dist::GeneralizedGamma,
     θ::Vector{Float64},
     Δtdyn,
-    Δtobs,
+    Δtobs;
+    Niter::Int = 40,
+    rtolθ::Float64 = 1e-4
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -105,7 +117,7 @@ function HEnKF(
         isθshared = false
     end
 
-    return HEnKF(x -> x, ϵy, sys, dist, flow, θ, Δtdyn, Δtobs, isθshared, false, false)
+    return HEnKF(x -> x, ϵy, sys, dist, flow, θ, Δtdyn, Δtobs, isθshared, false, false, Niter, rtolθ)
 end
 
 function Base.show(io::IO, enkf::HEnKF)
