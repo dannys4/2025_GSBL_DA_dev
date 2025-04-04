@@ -55,6 +55,9 @@ struct HLocEnKF <: SeqFilter
 
     "Optimization relative tolerance"
     rtolθ::Float64
+
+    "Initial guess for shared θ"
+    θinit::Float64
 end
 
 function HLocEnKF(
@@ -70,7 +73,8 @@ function HLocEnKF(
     isiterative = false,
     isfiltered = false,
     Niter::Int = 40,
-    rtolθ::Float64 = 1e-4
+    rtolθ::Float64 = 1e-4,
+    θinit::Float64 = 1.
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -96,7 +100,8 @@ function HLocEnKF(
         isiterative,
         isfiltered,
         Niter,
-        rtolθ
+        rtolθ,
+        θinit
     )
 end
 
@@ -112,6 +117,7 @@ function HLocEnKF(
     Δtobs;
     Niter::Int = 40,
     rtolθ::Float64 = 1e-4,
+    θinit::Float64 = 1.,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -137,7 +143,8 @@ function HLocEnKF(
         false,
         false,
         Niter,
-        rtolθ
+        rtolθ,
+        θinit
     )
 end
 
@@ -163,8 +170,8 @@ function (enkf::Union{HEnKF,HLocEnKF})(
 
     if enkf.isθshared
         # Initial guess?
-        enkf.θ .= one(enkf.sys.Nz)
-        
+        enkf.θ .= enkf.θinit
+
         θold = zero(enkf.θ)
         for n = 1:enkf.Niter
             copy!(θold, enkf.θ)

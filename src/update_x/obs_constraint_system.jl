@@ -65,7 +65,13 @@ function (*)(sys::ObsConstraintSystem, input::ObsConstraintVector)
     return output
 end
 
-function mul!(output::Vector{Float64}, sys::ObsConstraintSystem, input::Vector{Float64})
+function mul!(
+    output::AbstractVector{Float64},
+    sys::ObsConstraintSystem,
+    input::AbstractVector{Float64},
+    α::Real,
+    β::Real
+)
 
 
     @unpack Nx, Ny, Nz, H, S, Cθ, Cϵ, CX = sys
@@ -76,19 +82,20 @@ function mul!(output::Vector{Float64}, sys::ObsConstraintSystem, input::Vector{F
     y = view(input, idx_y)
     s = view(input, idx_s)
 
-    output[idx_y] .= Cϵ * y
-    output[idx_y] .+= H * (CX * (H' * y))
-    output[idx_y] .+= H * (CX * (S' * s))
+    
+    mul!(output[idx_y], Cϵ, y, α, β)
+    mul!(output[idx_y], H, (CX * (H' * y)), α, true)
+    mul!(output[idx_y], H, (CX * (S' * s)), α, true)
 
-    output[idx_s] .= S * (CX * (H' * y))
-    output[idx_s] .+= Cθ * s
-    output[idx_s] .+= S * (CX * (S' * s))
+    mul!(output[idx_s], S, (CX * (H' * y)), α, β)
+    mul!(output[idx_s], Cθ, s, α, true)
+    mul!(output[idx_s], S, (CX * (S' * s)), α, true)
 
     return output
 end
 
 function (*)(sys::ObsConstraintSystem, input::Vector{Float64})
     output = similar(input)
-    mul!(output, sys, input)
+    mul!(output, sys, input, true, false)
     return output
 end

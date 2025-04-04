@@ -57,6 +57,9 @@ include("update_x/hierarchical_localized_enkf.jl")
 include("update_x/update_x_hierarchical_enkf_separate.jl")
 include("update_x/update_x_hierarchical_enkf_shared.jl")
 
+# update utils
+include("tools/update_utils.jl")
+
 # Setup object for Trixi
 include("trixi/trixi_system.jl")
 include("trixi/generate_data.jl")

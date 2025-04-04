@@ -1,3 +1,4 @@
+# UNUSED IN PACKAGE
 # In this version, there is a jump coefficient θ shared across the ensemble members, 
 # and we first assimilate the observations before to assimilate the regularization term
 getĈX(enkf::HEnKF, X) = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix = true)

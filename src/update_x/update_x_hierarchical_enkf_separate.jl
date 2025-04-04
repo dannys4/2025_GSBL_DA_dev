@@ -8,7 +8,7 @@ function update_x!(
     t,
 )
 
-    @assert enkf.isθshared == false
+    @assert !enkf.isθshared
 
     Ny = size(ystar, 1)
     Nx = size(X, 1) - Ny
@@ -21,17 +21,13 @@ function update_x!(
 
     # Generate observational noise samples
     E = zeros(Ny, Ne)
-    if typeof(enkf.ϵy) <: AdditiveInflation
+    if enkf.ϵy isa AdditiveInflation
         E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
     end
 
     si = zeros(enkf.sys.Ns)
 
-    if typeof(enkf) <: HEnKF
-        ĈX = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix = true)
-    elseif typeof(enkf) <: HLocEnKF
-        ĈX = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix = true)
-    end
+    ĈX = getĈX(enkf, X, Ny, Nx)
 
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
@@ -43,15 +39,11 @@ function update_x!(
     # Update covariance matrix
     enkf.sys.CX[1] = ĈX_op
 
-
+    !isa(enkf.sys.Cθ, LinearMaps.LinearMaps.WrappedMap{Float64}) && throw(ArgumentError("Wrong type for Cθ"))
     for i = 1:Ne
         # Update weight vector θ
-        if typeof(enkf.sys.Cθ) <: LinearMaps.LinearMaps.WrappedMap{Float64}
-            enkf.θ[:, i] .= θ[:, i]
-            enkf.sys.Cθ.lmap.diag .= θ[:, i]
-        else
-            error("Wrong type for Cθ")
-        end
+        enkf.θ[:, i] .= θ[:, i]
+        enkf.sys.Cθ.lmap.diag .= θ[:, i]
 
         sys_op = LinearMaps.FunctionMap{Float64,true}(
             (y, x) -> mul!(y, enkf.sys, x),
@@ -111,6 +103,6 @@ function update_x!(
         δi .= enkf.sys.H' * observation(ys_i)
         δi .+= enkf.sys.S' * constraint(ys_i)
 
-        xi .+= -(ĈX * δi)
+        xi .-= ĈX * δi
     end
 end

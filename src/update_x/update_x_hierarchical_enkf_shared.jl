@@ -7,8 +7,8 @@ function update_x!(
     ystar::Vector{Float64},
     t,
 )
-
-    @assert enkf.isθshared == true
+    @assert enkf.sys.Cθ isa LinearMaps.LinearMaps.WrappedMap{Float64}
+    @assert enkf.isθshared
 
     Ny = size(ystar, 1)
     Nx = size(X, 1) - Ny
@@ -21,17 +21,13 @@ function update_x!(
 
     # Generate observational noise samples
     E = zeros(Ny, Ne)
-    if typeof(enkf.ϵy) <: AdditiveInflation
+    if enkf.ϵy isa AdditiveInflation
         E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
     end
 
     si = zeros(enkf.sys.Nz)
 
-    if typeof(enkf) <: HEnKF
-        ĈX = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix = true)
-    elseif typeof(enkf) <: HLocEnKF
-        ĈX = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix = true)
-    end
+    ĈX = getĈX(enkf, X, Ny, Nx)
 
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
@@ -44,12 +40,8 @@ function update_x!(
     enkf.sys.CX[1] = ĈX_op
 
     # Update weight vector θ
-    if typeof(enkf.sys.Cθ) <: LinearMaps.LinearMaps.WrappedMap{Float64}
-        enkf.θ .= θ
-        enkf.sys.Cθ.lmap.diag .= θ
-    else
-        error("Wrong type for Cθ")
-    end
+    enkf.θ .= θ
+    enkf.sys.Cθ.lmap.diag .= θ
 
     sys_op = LinearMaps.FunctionMap{Float64,true}(
         (y, x) -> mul!(y, enkf.sys, x),
@@ -57,6 +49,19 @@ function update_x!(
         issymmetric = true,
         isposdef = true,
     )
+
+    # if !enkf.isiterative
+    #     # sys_mat = zeros(Ny + Nz, Ny + Nz)
+
+    #     # ei = zeros(Ny + Nz)
+    #     # for i = 1:Ny+Nz
+    #     #     ei[i] = 1.0
+    #     #     sys_mat[:, i] = sys_op * ei
+    #     #     ei[i] = 0.0
+    #     # end
+
+    #     sys_mat = factorize(Hermitian(Matrix(sys_op)))
+    # end
 
     if enkf.isiterative == false
         sys_mat = zeros(Ny + Nz, Ny + Nz)
@@ -80,7 +85,6 @@ function update_x!(
 
     δi = zeros(Nx)
 
-
     for i = 1:Ne
         xi = view(X, Ny+1:Ny+Nx, i)
         yi = observation(ys_i)
@@ -96,24 +100,21 @@ function update_x!(
         tmp.x[1] .= ys_i.x[1]
         tmp.x[2] .= ys_i.x[2]
 
-        if enkf.isiterative == false
-
+        if !enkf.isiterative
             ys_i .= sys_mat \ tmp
-
         else
-
             # Invert sys_op
-            # ldiv!(ys_i, sys_mat, ys_i)
-            # @show typeof(ys_i)
-            # @show cg(sys_op, ys_i; log = true)[2]/
-            # @show cg(sys_op, tmp; log = true, reltol = 1e-3)
             cg!(ys_i, sys_op, tmp; log = false, reltol = 1e-3)
-
         end
-
         δi .= enkf.sys.H' * observation(ys_i)
         δi .+= enkf.sys.S' * constraint(ys_i)
-
         xi .+= -(ĈX * δi)
+        # mul!(δi, enkf.sys.H', observation(ys_i), true, false)
+        # C <- S^T * ys_i + C
+        # mul!(δi, enkf.sys.S', constraint(ys_i), true, true)
+        # xi <- xi -(ĈX * δi)
+        # mul!(xi, ĈX, δi, -1, true)
+        # xi .+= -(ĈX * δi)
+        # δi .= 0
     end
 end
