@@ -87,12 +87,11 @@ function update_x!(enkf::LocEnKF, X, ystar::Vector{Float64}, t)
 
     # Generate observational noise samples
     E = zeros(Ny, Ne)
-    if typeof(enkf.ϵy) <: AdditiveInflation
+    if enkf.ϵy isa AdditiveInflation
         E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
     end
 
-    # ĈX = EmpiricalCov(X[Ny+1:Ny+Nx,:])
-    ĈX = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix = true)
+    ĈX = getĈX(enkf, X, Nx, Ny)
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
         Nx;
@@ -110,7 +109,7 @@ function update_x!(enkf::LocEnKF, X, ystar::Vector{Float64}, t)
         isposdef = true,
     )
 
-    if enkf.isiterative == false
+    if !enkf.isiterative
         sys_mat = zeros(Ny, Ny)
 
         ei = zeros(Ny)
@@ -136,14 +135,10 @@ function update_x!(enkf::LocEnKF, X, ystar::Vector{Float64}, t)
 
         yi .+= E[:, i] - ystar
 
-        if enkf.isiterative == false
+        if !enkf.isiterative
             yi .= sys_mat \ yi
         else
             # Invert sys_op
-            # ldiv!(ys_i, sys_mat, ys_i)
-            # @show typeof(ys_i)
-            # @show cg(sys_op, ys_i; log = true)[2]/
-            # @show cg(sys_op, yi; log = true, reltol = 1e-3)
             cg!(yi, sys_op, copy(yi); log = false, reltol = 1e-3)
         end
 
@@ -155,12 +150,10 @@ end
 
 function (enkf::LocEnKF)(X, ystar::Array{Float64,1}, t::Float64)
 
-    Ny = size(ystar, 1)
-    Nx = size(X, 1) - Ny
-    Ne = size(X, 2)
-
     # Update x 
     update_x!(enkf, X, ystar, t)
 
     return X
 end
+
+getĈX(enkf::LocEnKF, X, Nx, Ny; with_matrix=true) = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix)

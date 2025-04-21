@@ -21,17 +21,13 @@ function update_x!(
 
     # Generate observational noise samples
     E = zeros(Ny, Ne)
-    if typeof(enkf.ϵy) <: AdditiveInflation
+    if enkf.ϵy isa AdditiveInflation
         E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
     end
 
     si = zeros(enkf.sys.Nz)
 
-    if typeof(enkf) <: HEnKF
-        ĈX = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix = true)
-    elseif typeof(enkf) <: HLocEnKF
-        ĈX = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix = true)
-    end
+    ĈX = getĈX(enkf, X, Nx, Ny)
 
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
@@ -97,16 +93,10 @@ function update_x!(
         tmp.x[2] .= ys_i.x[2]
 
         if enkf.isiterative == false
-
             ys_i .= sys_mat \ tmp
-
         else
 
             # Invert sys_op
-            # ldiv!(ys_i, sys_mat, ys_i)
-            # @show typeof(ys_i)
-            # @show cg(sys_op, ys_i; log = true)[2]/
-            # @show cg(sys_op, tmp; log = true, reltol = 1e-3)
             cg!(ys_i, sys_op, tmp; log = false, reltol = 1e-3)
 
         end

@@ -47,10 +47,10 @@ struct HEnKF <: SeqFilter
     "Boolean: is state vector filtered"
     isfiltered::Bool
 
-    "Number of optimization (ALS) steps"
+    "Number of optimization (IAS) steps"
     Niter::Int
 
-    "Relative tolerance of ALS optimization"
+    "Relative tolerance of IAS optimization"
     rtolθ::Float64
 end
 
@@ -128,3 +128,5 @@ function Base.show(io::IO, enkf::HEnKF)
         filtered = $(enkf.isfiltered)",
     )
 end
+
+getĈX(::HEnKF, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix)

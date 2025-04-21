@@ -50,11 +50,17 @@ struct HLocEnKF <: SeqFilter
     "Boolean: is state vector filtered"
     isfiltered::Bool
 
-    "Number of optimization (ALS) iterations"
+    "Number of optimization (IAS) iterations"
     Niter::Int
 
     "Optimization relative tolerance"
     rtolθ::Float64
+
+    "Initialization of θ in IAS"
+    θinit::Float64
+
+    "Use stochastic samples of the state or not"
+    isStateStochastic::Bool
 end
 
 function HLocEnKF(
@@ -70,17 +76,15 @@ function HLocEnKF(
     isiterative = false,
     isfiltered = false,
     Niter::Int = 40,
-    rtolθ::Float64 = 1e-4
+    rtolθ::Float64 = 1e-4,
+    θinit::Float64 = 1.,
+    isStateStochastic::Bool = false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne = Ne)
 
-    if typeof(θ) <: Vector{Float64}
-        isθshared = true
-    elseif typeof(θ) <: Matrix{Float64}
-        isθshared = false
-    end
+    isθshared = (θ isa Vector)
 
     return HLocEnKF(
         G,
@@ -96,7 +100,9 @@ function HLocEnKF(
         isiterative,
         isfiltered,
         Niter,
-        rtolθ
+        rtolθ,
+        θinit,
+        isStateStochastic
     )
 end
 
@@ -112,17 +118,15 @@ function HLocEnKF(
     Δtobs;
     Niter::Int = 40,
     rtolθ::Float64 = 1e-4,
+    θinit::Float64 = 1.,
+    isStateStochastic::Bool = false
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne = Ne)
 
-    if typeof(θ) <: Vector{Float64}
-        isθshared = true
-    elseif typeof(θ) <: Matrix{Float64}
-        isθshared = false
-    end
-
+    isθshared = (θ isa Vector)
+    isStateStochastic && @assert isθshared "If state is stochastic, expected θ to be shared"
     return HLocEnKF(
         x -> x,
         ϵy,
@@ -137,7 +141,9 @@ function HLocEnKF(
         false,
         false,
         Niter,
-        rtolθ
+        rtolθ,
+        θinit,
+        isStateStochastic
     )
 end
 
@@ -157,16 +163,15 @@ function (enkf::Union{HEnKF,HLocEnKF})(
     t::Float64
 )
 
-    Ny = size(ystar, 1)
-    Nx = size(X, 1) - Ny
-    Ne = size(X, 2)
-
     if enkf.isθshared
         # Initial guess?
-        enkf.θ .= one(enkf.sys.Nz)
+        fill!(enkf.θ, enkf.θinit)
         
+        # Need original X for update if we do stochastically
+        X_init = enkf.isStateStochastic ? copy(X) : nothing
+
         θold = zero(enkf.θ)
-        for n = 1:enkf.Niter
+        for _ = 1:enkf.Niter
             copy!(θold, enkf.θ)
 
             # Update x 
@@ -179,10 +184,15 @@ function (enkf::Union{HEnKF,HLocEnKF})(
                 break
             end
         end
+        if enkf.isStateStochastic # Given θ, conditionally sample X_t | θ, y_t
+            update_x!(enkf, X_init, enkf.θ, ystar, t)
+            # Move data back into X
+            copy!(X, X_init)
+        end
     else
         enkf.θ .= rand(enkf.dist, enkf.sys.Ns, enkf.sys.Ne)
         θold = zero(enkf.θ)
-        for n = 1:enkf.Niter
+        for _ = 1:enkf.Niter
             copy!(θold, enkf.θ)
 
             # Update theta
@@ -198,3 +208,5 @@ function (enkf::Union{HEnKF,HLocEnKF})(
     end
     return X, enkf.θ
 end
+
+getĈX(enkf::HLocEnKF, X, Nx, Ny; with_matrix=true) = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix)

@@ -1,7 +1,5 @@
 # In this version, there is a jump coefficient θ shared across the ensemble members, 
 # and we first assimilate the observations before to assimilate the regularization term
-getĈX(enkf::HEnKF, X) = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix = true)
-getĈX(enkf::HLocEnKF, X) = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix = true)
 
 function update_x!(
     enkf::Union{HEnKF,HLocEnKF},
@@ -24,13 +22,13 @@ function update_x!(
 
     # Generate observational noise samples
     E = zeros(Ny, Ne)
-    if typeof(enkf.ϵy) <: AdditiveInflation
+    if enkf.ϵy isa AdditiveInflation
         E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
     end
 
     si = zeros(enkf.sys.Ns)
 
-    ĈX = getĈX(enkf, X)
+    ĈX = getĈX(enkf, X, Nx, Ny)
 
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
@@ -50,6 +48,8 @@ function update_x!(
     enkf.θ .= θ
     enkf.sys.Cθ.lmap.diag .= θ
 
+    # enkf.sys is a ObservationSystem
+    # This is then the observation operator (i.e., y = Hx)
     sys_op = LinearMaps.FunctionMap{Float64,true}(
         (y, x) -> mul!(y, enkf.sys, x),
         Ny + Ns;
@@ -57,14 +57,14 @@ function update_x!(
         isposdef = true,
     )
 
-    if enkf.isiterative == false
+    if !enkf.isiterative
         sys_mat = zeros(Ny + Ns, Ny + Ns)
 
         ei = zeros(Ny + Ns)
         for i = 1:Ny+Ns
-            fill!(ei, 0.0)
             ei[i] = 1.0
             sys_mat[:, i] = sys_op * ei
+            ei[i] = 0.0
         end
         sys_mat = factorize(Hermitian(sys_mat))
     end
@@ -76,7 +76,6 @@ function update_x!(
     tmp = ObsConstraintVector(Ny, Ns)
 
     δi = zeros(Nx)
-
 
     for i = 1:Ne
         xi = view(X, Ny+1:Ny+Nx, i)
@@ -93,11 +92,11 @@ function update_x!(
         tmp.x[1] .= ys_i.x[1]
         tmp.x[2] .= ys_i.x[2]
 
-        if enkf.isiterative == false
-            ys_i .= sys_mat \ tmp
-        else
+        if enkf.isiterative
             # Invert sys_op
             cg!(ys_i, sys_op, tmp; log = false, reltol = 1e-3)
+        else
+            ys_i .= sys_mat \ tmp
         end
 
         δi .= enkf.sys.H' * observation(ys_i)

@@ -51,7 +51,7 @@ function PolyAnnil(x::Vector, m::Int64; Nvar::Int64 = 1, istruncated = false)#, 
         end
     end
 
-    if istruncated == true
+    if istruncated
         return PolyAnnil(x, m, sparse(PA[unroll(xidx, n, Nvar), :]))
     else
         return PolyAnnil(x, m, sparse(PA))
