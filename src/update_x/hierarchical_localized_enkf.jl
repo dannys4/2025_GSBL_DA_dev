@@ -1,5 +1,3 @@
-import TransportBasedInference2: SeqFilter
-
 export HLocEnKF, update_x!
 
 """
@@ -13,7 +11,7 @@ References:
 $(TYPEDFIELDS)
 """
 
-struct HLocEnKF <: SeqFilter
+struct HLocEnKF <: HierarchicalSeqFilter
     "Filter function"
     G::Function
 
@@ -157,7 +155,7 @@ function Base.show(io::IO, enkf::HLocEnKF)
 end
 
 
-function (enkf::Union{HEnKF,HLocEnKF})(
+function (enkf::HierarchicalSeqFilter)(
     X,
     ystar::Array{Float64,1},
     t::Float64

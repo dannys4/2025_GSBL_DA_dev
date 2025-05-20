@@ -24,6 +24,10 @@ using UnPack
 import LinearMaps: LinearMap, FunctionMap
 import UnPack: @unpack
 
+using TransportBasedInference2: SeqFilter
+
+abstract type HierarchicalSeqFilter <: TransportBasedInference2.SeqFilter end
+
 include("tools/modulo_realnumbers.jl")
 include("tools/unroll.jl")
 include("tools/smooth_periodic.jl")

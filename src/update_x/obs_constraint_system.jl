@@ -3,6 +3,7 @@ export ObsConstraintSystem
 import Base: *, size
 import LinearAlgebra: mul!
 
+# Covariance of (y,s) | x
 struct ObsConstraintSystem
     Nx::Int64
     Ny::Int64
@@ -45,7 +46,7 @@ function mul!(
     y = observation(input)
     s = constraint(input)
 
-    @unpack Nx, Ny, Nz, H, S, Cθ, Cϵ, CX = sys
+    @unpack H, S, Cθ, Cϵ, CX = sys
     CX = CX[1]
 
     output.x[1] .= Cϵ * y

@@ -22,12 +22,10 @@ function seqassim_trixi(
 
     Ne = size(X, 2)
 
-    step = ceil(Int, algo.Δtobs / algo.Δtdyn)
-
     statehist = Matrix{Float64}[]
     push!(statehist, deepcopy(X[Ny+1:Ny+Nx, :]))
 
-    if typeof(algo) <: Union{HEnKF,HLocEnKF}
+    if algo isa HierarchicalSeqFilter
         θhist = Vector{Float64}[]
         push!(θhist, algo.θ)
     end
@@ -62,10 +60,7 @@ function seqassim_trixi(
         tspan = (t0 + (i - 1) * algo.Δtobs, t0 + i * algo.Δtobs)
 
         function prob_func(prob, j, repeat)
-            # # At this point, the vector x is provided at the Gauss-Legendre nodes
-            # for k in eachindex(x_ode)
-            #     x_ode[k] = SVector{1}(X[Ny+k, j])
-            # end
+            # At this point, the vector x is provided at the Gauss-Legendre nodes
             vec2sol!(x_ode_p, X[Ny+1:Ny+Nx, j], deepcopy(sys.equations); g = prim2cons)
             # We need to move them to the Lobatto-Legendre nodes
             mul!(x_ode_q, sys.dg.basis.Pq, x_ode_p)
@@ -106,14 +101,14 @@ function seqassim_trixi(
 
         # Generate posterior samples.
         # Note that the additive inflation of the observation is applied within the sequential filter.
-        if typeof(algo) <: Union{HEnKF,HLocEnKF}
+        if algo isa HierarchicalSeqFilter
             X, θ = algo(X, ystar, t0 + i * algo.Δtobs - t0)
         else
             X = algo(X, ystar, t0 + i * algo.Δtobs - t0)
         end
 
         # Filter state
-        if algo.isfiltered == true
+        if algo.isfiltered
             for i = 1:Ne
                 statei = view(X, Ny+1:Ny+Nx, i)
                 statei .= algo.G(statei)
@@ -122,12 +117,12 @@ function seqassim_trixi(
 
         push!(statehist, copy(X[Ny+1:Ny+Nx, :]))
 
-        if typeof(algo) <: Union{HEnKF,HLocEnKF}
+        if algo isa HierarchicalSeqFilter
             push!(θhist, copy(θ))
         end
 
     end
-    if typeof(algo) <: Union{HEnKF,HLocEnKF}
+    if algo isa HierarchicalSeqFilter
         return statehist, θhist
     else
         return statehist

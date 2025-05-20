@@ -1,7 +1,7 @@
 # In this version, there is a jump coefficient θ shared across the eNzemble members
 
 function update_x!(
-    enkf::Union{HEnKF,HLocEnKF},
+    enkf::HierarchicalSeqFilter,
     X,
     θ::Vector{Float64},
     ystar::Vector{Float64},

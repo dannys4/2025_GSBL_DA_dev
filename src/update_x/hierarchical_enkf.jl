@@ -1,5 +1,3 @@
-import TransportBasedInference2: SeqFilter
-
 export HEnKF, update_x!
 
 """
@@ -13,7 +11,7 @@ References:
 $(TYPEDFIELDS)
 """
 
-struct HEnKF <: SeqFilter
+struct HEnKF <: HierarchicalSeqFilter
     "Filter function"
     G::Function
 
@@ -52,6 +50,9 @@ struct HEnKF <: SeqFilter
 
     "Relative tolerance of IAS optimization"
     rtolθ::Float64
+
+    "Use stochastic samples of the state or just output of MAP estimate"
+    isStateStochastic::Bool
 end
 
 function HEnKF(
@@ -63,20 +64,18 @@ function HEnKF(
     θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
     Δtobs;
-    isiterative = false,
-    isfiltered = false,
-    Niter::Int = 40,
-    rtolθ::Float64 = 1e-4
+    isiterative=false,
+    isfiltered=false,
+    Niter::Int=40,
+    rtolθ::Float64=1e-4,
+    isStateStochastic::Bool=false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
-    flow = FlowTheta(dist; Ne = Ne)
+    flow = FlowTheta(dist; Ne=Ne)
 
-    if typeof(θ) <: Vector{Float64}
-        isθshared = true
-    elseif typeof(θ) <: Matrix{Float64}
-        isθshared = false
-    end
+    isθshared = (θ isa Vector{Float64})
+    isStateStochastic && @assert isθshared "If state is stochastic, must have shared θ"
 
     return HEnKF(
         G,
@@ -92,6 +91,7 @@ function HEnKF(
         isfiltered,
         Niter,
         rtolθ,
+        isStateStochastic,
     )
 end
 
@@ -104,20 +104,34 @@ function HEnKF(
     θ::Vector{Float64},
     Δtdyn,
     Δtobs;
-    Niter::Int = 40,
-    rtolθ::Float64 = 1e-4
+    Niter::Int=40,
+    rtolθ::Float64=1e-4,
+    isStateStochastic::Bool=false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
-    flow = FlowTheta(dist; Ne = Ne)
+    flow = FlowTheta(dist; Ne=Ne)
 
-    if typeof(θ) <: Vector{Float64}
-        isθshared = true
-    elseif typeof(θ) <: Matrix{Float64}
-        isθshared = false
-    end
+    
+    isθshared = true # θ isa Vector{Float64} by method definition
+    # isStateStochastic && @assert isθshared "If state is stochastic, must have shared θ"
 
-    return HEnKF(x -> x, ϵy, sys, dist, flow, θ, Δtdyn, Δtobs, isθshared, false, false, Niter, rtolθ)
+    return HEnKF(
+        x -> x,
+        ϵy,
+        sys,
+        dist,
+        flow,
+        θ,
+        Δtdyn,
+        Δtobs,
+        isθshared,
+        false,
+        false,
+        Niter,
+        rtolθ,
+        isStateStochastic,
+        )
 end
 
 function Base.show(io::IO, enkf::HEnKF)

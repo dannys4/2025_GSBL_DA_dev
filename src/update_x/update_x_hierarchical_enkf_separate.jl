@@ -1,7 +1,7 @@
 # In this version, there is a jump coefficient θ per ensemble member
 
 function update_x!(
-    enkf::Union{HEnKF,HLocEnKF},
+    enkf::HierarchicalSeqFilter,
     X,
     θ::Matrix{Float64},
     ystar::Vector{Float64},

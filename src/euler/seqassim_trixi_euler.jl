@@ -27,7 +27,7 @@ function seqassim_trixi_euler(
     statehist = Matrix{Float64}[]
     push!(statehist, deepcopy(X[Ny+1:Ny+Nx, :]))
 
-    if typeof(algo) <: Union{HEnKF,HLocEnKF}
+    if algo isa HierarchicalSeqFilter
         θhist = Vector{Float64}[]
         push!(θhist, algo.θ)
     end
@@ -105,7 +105,7 @@ function seqassim_trixi_euler(
 
         # Generate posterior samples.
         # Note that the observation noise is applied within the sequential filter.
-        if typeof(algo) <: Union{HEnKF,HLocEnKF}
+        if algo isa HierarchicalSeqFilter
             X, θ = algo(X, ystar, t0 + i * algo.Δtobs - t0)
         else
             X = algo(X, ystar, t0 + i * algo.Δtobs - t0)
@@ -121,12 +121,12 @@ function seqassim_trixi_euler(
 
         push!(statehist, copy(X[Ny+1:Ny+Nx, :]))
 
-        if typeof(algo) <: Union{HEnKF,HLocEnKF}
+        if algo isa HierarchicalSeqFilter
             push!(θhist, copy(θ))
         end
 
     end
-    if typeof(algo) <: Union{HEnKF,HLocEnKF}
+    if algo isa HierarchicalSeqFilter
         return statehist, θhist
     else
         return statehist

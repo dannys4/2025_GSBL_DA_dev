@@ -1,8 +1,9 @@
 export EmpiricalCov, LocalizedEmpiricalCov
+abstract type AbstractEmpiricalCov end
 
 # In this script, we develop a matrix-free formulation for the action of an empirical covariance matrix on a state
 
-struct EmpiricalCov
+struct EmpiricalCov <: AbstractEmpiricalCov
     Nx::Int64
     Ne::Int64
     X::Matrix{Float64}
@@ -13,17 +14,18 @@ end
 function EmpiricalCov(X::Matrix{Float64}; with_matrix = true)
     Nx, Ne = size(X)
     μX = mean(X; dims = 2)[:, 1]
-    if with_matrix == true
+
+    CX = nothing
+
+    if with_matrix
         CX = cov(X')
-    else
-        CX = nothing
     end
     return EmpiricalCov(Nx, Ne, X, μX, CX)
 end
 
 function mul!(v::AbstractVector{Float64}, Ĉ::EmpiricalCov, u::AbstractVector{Float64})
     @unpack Nx, Ne, X, μX, CX = Ĉ
-    if typeof(CX) == Nothing
+    if isnothing(CX)
         fill!(v, zero(eltype(v)))
         for i = 1:Ne
             xi = view(X, :, i)
@@ -42,7 +44,7 @@ function (*)(Ĉ::EmpiricalCov, u::AbstractVector{Float64})
     return v
 end
 
-struct LocalizedEmpiricalCov
+struct LocalizedEmpiricalCov <: AbstractEmpiricalCov
     Nx::Int64
     Ne::Int64
     X::Matrix{Float64}
@@ -59,13 +61,13 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
 
     ρX = sparse(Locgaspari((Nx, Nx), Loc.L, Loc.Gxx))
 
-    if with_matrix == true
+    CX = nothing
+    CXloc = nothing
+
+    if with_matrix
         CX = cov(X')
         CXloc = ρX .* CX
     else
-        CX = nothing
-        CXloc = nothing
-    end
 
     return LocalizedEmpiricalCov(Nx, Ne, X, μX, CX, Loc, ρX, CXloc)
 end
@@ -76,7 +78,7 @@ function mul!(
     u::AbstractVector{Float64},
 )
 
-    if typeof(Ĉ.CX) == Nothing
+    if isnothing(Ĉ.CX)
         fill!(v, zero(eltype(v)))
 
         # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf
