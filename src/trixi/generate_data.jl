@@ -1,14 +1,14 @@
 export generate_data_trixi
 
-function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem)
+function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem; ode_solver = SSPRK43(), cfl = 0.2, ode_kwargs...)
 
     @assert model.Nx == size(x0, 1) "Error dimension of the input"
     xt = zeros(model.Nx, J)
 
     x = deepcopy(x0)
     # First is for the interpolation points, second is for the quadrature points
-    x_ode_p = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
-    x_ode_q = similar(x_ode_p)
+    x_quad = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
+    x_itp = similar(x_quad)
 
     yt = zeros(model.Ny, J)
     tt = zeros(J)
@@ -27,7 +27,7 @@ function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem)
     # analysis_callback = AnalysisCallback(semi, interval = 100, uEltype = real(dg))
 
     # handles the re-calculation of the maximum Δt after each time step
-    stepsize_callback = StepsizeCallback(cfl = 0.1)
+    stepsize_callback = StepsizeCallback(;cfl)
 
     # collect all callbacks such that they can be passed to the ODE solver
     # callbacks = CallbackSet(stepsize_callback)
@@ -38,35 +38,35 @@ function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem)
         tspan = (t0 + (i - 1) * model.Δtobs, t0 + i * model.Δtobs)
 
         # At this point, the vector x is provided at the Gauss-Legendre nodes
-        vec2sol!(x_ode_p, x, sys.equations; g = prim2cons)
+        vec2sol!(x_quad, x, sys.equations; g = prim2cons)
+        # x_quad exists on quadrature nodes. Move to itp points
+        get_interp_node_vals!(sys.dg, x_quad, x_itp)
 
-        # x_ode_p exists on quadrature nodes. Move to itp points
-        mul!(x_ode_q, sys.dg.basis.Pq, x_ode_p)
-
-        prob = remake(prob, u0 = x_ode_q, tspan = tspan)
+        prob = remake(prob, u0 = x_itp, tspan = tspan)
 
         sol = solve(
             prob,
-            SSPRK43(),
+            ode_solver;
             # dt = model.Δtdyn,
             adaptive = true,
             dense = false,
             save_everystep = false,
             callback = stepsize_callback,
+            ode_kwargs...
         )
 
         # Interpolate the solution from the solver back to the quadrature nodes and reshaping
-        mul!(x_ode_p, sys.dg.basis.Vq, sol.u[end])
-        sol2vec!(x, x_ode_p, sys.equations; g = cons2prim)
-
+        get_quadrature_node_vals!(sys.dg, x_quad, sol.u[end])
+        sol2vec!(x, x_quad, sys.equations; g = cons2prim)
+        
         model.ϵx(x)
-
+        
         # Collect observations
         tt[i] = deepcopy(i * model.Δtobs)
         xt[:, i] = deepcopy(x)
         yt[:, i] = deepcopy(model.F.h(x, tt[i]))
 
-        if typeof(model.ϵy) <: AdditiveInflation
+        if model.ϵy isa AdditiveInflation
             yt[:, i] .+= model.ϵy.m + model.ϵy.σ * randn(model.Ny)
         end
     end

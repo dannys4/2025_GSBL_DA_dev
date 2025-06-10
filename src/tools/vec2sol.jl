@@ -26,6 +26,30 @@ function sol2vec(x_mat::AbstractMatrix, equations; g::Function = cons2prim)
     return x_vec
 end
 
+function sol2vec!(
+    x_vec::AbstractVector,
+    x_sol::AbstractVector,
+    equations;
+    g::Function = cons2prim,
+)
+    Nvar = nvariables(equations)
+    N_nodes_total = length(x_sol) ÷ Nvar
+
+    for i in 1:N_nodes_total
+        xi = @view x_sol[((i-1)*Nvar + 1):i*Nvar]
+        x̃i = g(xi, equations)
+        for k = 1:Nvar
+            x_vec[(k-1)*Nvar + i] = x̃i[k]
+        end
+    end
+end
+
+function sol2vec(x_sol::AbstractVector, equations; g::Function = cons2prim)
+    x_vec = similar(x_sol)
+    sol2vec!(x_vec, x_sol, equations; g = g)
+    return x_vec
+end
+
 function vec2sol!(
     x_mat::AbstractMatrix,
     x_vec::AbstractVector,
@@ -44,10 +68,29 @@ function vec2sol!(
     end
 end
 
-function vec2sol(x_vec::AbstractVector, equations, semi; g::Function = prim2cons)
+function vec2sol!(
+    x_sol::AbstractVector,
+    x_vec::AbstractVector,
+    equations;
+    g::Function = prim2cons,
+)
     Nvar = nvariables(equations)
+    N_nodes_total = length(x_sol) ÷ Nvar
 
-    x_mat = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(semi)...)
-    vec2sol!(x_mat, x_vec, equations; g = g)
-    return x_mat
+    tmp_vec = zeros(Nvar)
+    for i in 1:N_nodes_total
+        for k = 1:Nvar
+            tmp_vec[k] = x_vec[(k-1)*N_nodes_total+i]
+        end
+        tmp_out = g(SVector{Nvar}(tmp_vec), equations)
+        for k in 1:Nvar
+            x_sol[(i-1)*Nvar+k] = tmp_out[k]
+        end
+    end
+end
+
+function vec2sol(x_vec::AbstractVector, equations, semi; g::Function = prim2cons)
+    x_sol = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(semi)...)
+    vec2sol!(x_sol, x_vec, equations; g = g)
+    return x_sol
 end

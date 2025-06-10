@@ -4,18 +4,19 @@ using LinearAlgebra
 
 function update_x!(
     enkf::HierarchicalSeqFilter,
-    X,
+    X_forecast,
     θ::Vector{Float64},
     ystar::Vector{Float64},
     t,
+    X_analysis
 )
-
+    @assert X_forecast !== X_analysis
     @assert enkf.isθshared
 
     Ny = size(ystar, 1)
-    Nx = size(X, 1) - Ny
-    Ne = size(X, 2)
-    Ne = size(X, 2)
+    Nx = size(X_forecast, 1) - Ny
+    Ne = size(X_forecast, 2)
+    Ne = size(X_forecast, 2)
     Ns = enkf.sys.Ns
 
     @assert size(θ, 1) == Ns
@@ -29,7 +30,7 @@ function update_x!(
 
     si = zeros(enkf.sys.Ns)
 
-    ĈX = getĈX(enkf, X, Nx, Ny)
+    ĈX = getĈX(enkf, X_forecast, Nx, Ny)
 
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
@@ -78,8 +79,10 @@ function update_x!(
 
     δi = zeros(Nx)
 
+    copy!(view(X_analysis, Ny+1:Ny+Nx, :), view(X_forecast, Ny+1:Ny+Nx, :))
+
     for i = 1:Ne
-        xi = view(X, Ny+1:Ny+Nx, i)
+        x_analysis_i = view(X_analysis, Ny+1:Ny+Nx, i)
         yi = observation(ys_i)
         si = constraint(ys_i)
 
@@ -107,7 +110,7 @@ function update_x!(
         δi .= enkf.sys.H' * observation(ys_i)
         δi .+= enkf.sys.S' * constraint(ys_i)
 
-        xi .+= -(ĈX * δi)
+        mul!(x_analysis_i, ĈX, δi, -1, true)
     end
 end
 
@@ -125,7 +128,7 @@ function update_x_fixed_θ_laplace!(
     t
 )
 
-    @assert enkf.isθshared && enkf.isStateStochastic
+    @assert enkf.isθshared && enkf.useEnKIOpt
 
     Ny = size(ystar, 1)
     Nx = size(X, 1) - Ny

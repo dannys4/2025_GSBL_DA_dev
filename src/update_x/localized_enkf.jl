@@ -76,13 +76,13 @@ function Base.show(io::IO, enkf::LocEnKF)
     )
 end
 
-function update_x!(enkf::LocEnKF, X, ystar::Vector{Float64}, t)
-
-
+function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analysis)
     Ny = size(ystar, 1)
-    Nx = size(X, 1) - Ny
-    Ne = size(X, 2)
-
+    Nx = size(X_forecast, 1) - Ny
+    Ne = size(X_forecast, 2)
+    
+    # Use in-place updates
+    @assert X_forecast === X_analysis
     @assert size(ystar, 1) == Ny
 
     # Generate observational noise samples
@@ -91,7 +91,7 @@ function update_x!(enkf::LocEnKF, X, ystar::Vector{Float64}, t)
         E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
     end
 
-    ĈX = getĈX(enkf, X, Nx, Ny)
+    ĈX = getĈX(enkf, X_forecast, Nx, Ny)
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
         Nx;
@@ -128,7 +128,7 @@ function update_x!(enkf::LocEnKF, X, ystar::Vector{Float64}, t)
     δi = zeros(Nx)
 
     for i = 1:Ne
-        xi = view(X, Ny+1:Ny+Nx, i)
+        xi = view(X_analysis, Ny+1:Ny+Nx, i)
 
         mul!(yi, enkf.sys.H, xi)
         @assert isapprox(yi, enkf.sys.H * xi, atol = 1e-8)
@@ -151,7 +151,7 @@ end
 function (enkf::LocEnKF)(X, ystar::Array{Float64,1}, t::Float64)
 
     # Update x 
-    update_x!(enkf, X, ystar, t)
+    update_x!(enkf, X, ystar, t, X)
 
     return X
 end

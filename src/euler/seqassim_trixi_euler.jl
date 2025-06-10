@@ -37,8 +37,8 @@ function seqassim_trixi_euler(
     Acycle = n0:n0+J-1
     tspan = (t0, t0 + algo.Δtobs)
 
-    x_ode = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
-    tmp = zero(x_ode)
+    x_itp = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
+    x_quad = similar(x_itp)
 
     prob = semidiscretize(sys.semi, tspan)
 
@@ -62,12 +62,12 @@ function seqassim_trixi_euler(
 
         function prob_func(prob, j, repeat)
             # At this point, the vector x is provided at the Gauss-Legendre nodes
-            vec2sol!(x_ode, X[Ny+1:Ny+Nx, i], sys.equations)
+            vec2sol!(x_quad, X[Ny+1:Ny+Nx, i], sys.equations)
 
             # We need to move them to the Lobatto-Legendre nodes
-            mul!(x_ode, sys.dg.basis.Pq, x_ode)
+            get_interp_node_vals!(sys.dg, x_quad, x_interp)
 
-            remake(prob, u0 = x_ode, tspan = tspan)
+            remake(prob, u0 = x_itp, tspan = tspan)
         end
 
         ensemble_prob = EnsembleProblem(
@@ -89,9 +89,9 @@ function seqassim_trixi_euler(
 
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
-            mul!(x_ode, sys.dg.basis.Vq, sim[i])
-            sol2vec!(view(X, Ny+1:Ny+Nx, i), x_ode, sys.equations)
-            # X[Ny+1:Ny+Nx, i] .= vcat(x_ode...)
+            get_quadrature_node_vals!(sys.dg, x_quad, sim[i])
+            sol2vec!(view(X, Ny+1:Ny+Nx, i), x_quad, sys.equations)
+            # X[Ny+1:Ny+Nx, i] .= vcat(x_itp...)
         end
 
         # Collect observation from the true system y⋆_t from data.yt. 

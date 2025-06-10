@@ -2,7 +2,6 @@ export seqassim_trixi
 
 # Write the seqassim routine for the LikEnRF with further options to output the dof estimate over time and store previous joint samples
 
-
 """
 		seqassim_trixi(F::StateSpace, data::SyntheticData, J::Int64, ϵx::InflationType, algo::SeqFilter, X, Ny, Nx, t0::Float64)
 
@@ -17,7 +16,9 @@ function seqassim_trixi(
     Ny::Int64,
     Nx::Int64,
     t0::Float64,
-    sys::TrixiSystem,
+    sys::TrixiSystem;
+    solver = SSPRK43(),
+    ode_kwargs...
 )
 
     Ne = size(X, 2)
@@ -30,14 +31,13 @@ function seqassim_trixi(
         push!(θhist, algo.θ)
     end
 
-
     n0 = ceil(Int64, t0 / algo.Δtobs) + 1
     Acycle = n0:n0+J-1
     tspan = (t0, t0 + algo.Δtobs)
 
-    x_ode_p = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
-    # create x_ode_p for each thread
-    x_ode_q = similar(x_ode_p)
+    x_itp = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
+    # create x_itp for each thread
+    x_quad = similar(x_itp)
 
     prob = semidiscretize(sys.semi, tspan)
 
@@ -61,11 +61,11 @@ function seqassim_trixi(
 
         function prob_func(prob, j, repeat)
             # At this point, the vector x is provided at the Gauss-Legendre nodes
-            vec2sol!(x_ode_p, X[Ny+1:Ny+Nx, j], deepcopy(sys.equations); g = prim2cons)
+            vec2sol!(x_quad, @view(X[Ny+1:Ny+Nx, j]), sys.equations; g = prim2cons)
             # We need to move them to the Lobatto-Legendre nodes
-            mul!(x_ode_q, sys.dg.basis.Pq, x_ode_p)
+            get_interp_node_vals!(sys.dg.basis, x_itp, x_quad)
 
-            remake(prob, u0 = x_ode_q, tspan = tspan)
+            remake(prob, u0 = x_itp, tspan = tspan)
         end
 
         ensemble_prob = EnsembleProblem(
@@ -76,19 +76,22 @@ function seqassim_trixi(
 
         sim = solve(
             ensemble_prob,
-            SSPRK43(),
+            solver,
             adaptive = true,
             EnsembleSerial(),
             trajectories = Ne,
             dense = false,
             save_everystep = false,
-            callback = stepsize_callback,
+            callback = stepsize_callback;
+            ode_kwargs...
+            # dtmax = (tspan[2] - tspan[1])/100
         )
 
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
-            mul!(x_ode_p, sys.dg.basis.Vq, sim[i])
-            sol2vec!(view(X, Ny+1:Ny+Nx, i), x_ode_p, sys.equations; g = cons2prim)
+            # mul!(x_itp, sys.dg.basis.Vq, sim[i])
+            get_quadrature_node_vals!(sys.dg.basis, sim[i], x_quad)
+            sol2vec!(view(X, Ny+1:Ny+Nx, i), x_quad, sys.equations; g = cons2prim)
         end
 
         # Assimilation # Get real measurement # Fix this later # Things are shifted in data.yt
@@ -120,7 +123,6 @@ function seqassim_trixi(
         if algo isa HierarchicalSeqFilter
             push!(θhist, copy(θ))
         end
-
     end
     if algo isa HierarchicalSeqFilter
         return statehist, θhist

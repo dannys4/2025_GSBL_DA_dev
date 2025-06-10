@@ -67,7 +67,7 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
     if with_matrix
         CX = cov(X')
         CXloc = ρX .* CX
-    else
+    end
 
     return LocalizedEmpiricalCov(Nx, Ne, X, μX, CX, Loc, ρX, CXloc)
 end
@@ -76,9 +76,12 @@ function mul!(
     v::AbstractVector{Float64},
     Ĉ::LocalizedEmpiricalCov,
     u::AbstractVector{Float64},
+    α = true,
+    β = false
 )
 
     if isnothing(Ĉ.CX)
+        @assert α && !β
         fill!(v, zero(eltype(v)))
 
         # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf
@@ -89,7 +92,7 @@ function mul!(
         end
         v .*= inv(Ĉ.Ne - 1)
     else
-        mul!(v, Ĉ.CXloc, u)
+        mul!(v, Ĉ.CXloc, u, α, β)
     end
     return v
 end

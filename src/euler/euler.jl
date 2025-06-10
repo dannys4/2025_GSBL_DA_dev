@@ -112,3 +112,58 @@ function setup_euler(
 
     return TrixiSystem(equations, dg, mesh, semi)
 end
+
+function setup_euler_SEM(
+    polydeg,
+    cells_per_dimension;
+    initial_condition = initial_condition_shu_osher,
+)
+
+    gamma_gas = 1.4
+    equations = CompressibleEulerEquations1D(gamma_gas)
+
+    ###############################################################################
+    # setup the GSBP DG discretization that uses the Gauss operators from 
+    # Chan, Del Rey Fernandez, Carpenter (2019). 
+    # [https://doi.org/10.1137/18M1209234](https://doi.org/10.1137/18M1209234)
+
+    surface_flux = flux_lax_friedrichs
+    volume_flux = flux_ranocha
+
+    basis = LobattoLegendreBasis(polydeg)
+
+    indicator_sc = IndicatorHennemannGassner(equations, basis,
+                             alpha_max = 0.5,
+                             alpha_min = 0.001,
+                             alpha_smooth = false,
+                             variable = density_pressure)
+    
+    volume_integral = VolumeIntegralShockCapturingHG(
+        indicator_sc;
+        volume_flux_dg = volume_flux,
+        volume_flux_fv = surface_flux,
+    )
+
+    dg = DGSEM(basis, SurfaceIntegralWeakForm(surface_flux), volume_integral)
+
+    
+    boundary_condition = BoundaryConditionDirichlet(initial_condition)
+    boundary_conditions = (x_neg = boundary_condition, x_pos = boundary_condition)
+
+    ###############################################################################
+    #  setup the 1D mesh
+
+    mesh = StructuredMesh((cells_per_dimension,),(Returns(-5.),Returns(5.)),periodicity=false)
+
+    ###############################################################################
+    #  setup the semidiscretization
+
+    semi = SemidiscretizationHyperbolic(
+        mesh,
+        equations,
+        initial_condition,
+        dg;
+        boundary_conditions
+    )
+    return TrixiSystem(equations, dg, mesh, semi)
+end

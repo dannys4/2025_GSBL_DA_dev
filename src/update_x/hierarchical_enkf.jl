@@ -51,8 +51,8 @@ struct HEnKF <: HierarchicalSeqFilter
     "Relative tolerance of IAS optimization"
     rtolθ::Float64
 
-    "Use stochastic samples of the state or just output of MAP estimate"
-    isStateStochastic::Bool
+    "Use Ensemble Kalman inversion while finding θ"
+    useEnKIOpt::Bool
 end
 
 function HEnKF(
@@ -68,14 +68,14 @@ function HEnKF(
     isfiltered=false,
     Niter::Int=40,
     rtolθ::Float64=1e-4,
-    isStateStochastic::Bool=false,
+    useEnKIOpt::Bool=false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne=Ne)
 
     isθshared = (θ isa Vector{Float64})
-    isStateStochastic && @assert isθshared "If state is stochastic, must have shared θ"
+    useEnKIOpt && @assert isθshared "If state is stochastic, must have shared θ"
 
     return HEnKF(
         G,
@@ -91,7 +91,7 @@ function HEnKF(
         isfiltered,
         Niter,
         rtolθ,
-        isStateStochastic,
+        useEnKIOpt,
     )
 end
 
@@ -106,7 +106,7 @@ function HEnKF(
     Δtobs;
     Niter::Int=40,
     rtolθ::Float64=1e-4,
-    isStateStochastic::Bool=false,
+    useEnKIOpt::Bool=false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -114,7 +114,7 @@ function HEnKF(
 
     
     isθshared = true # θ isa Vector{Float64} by method definition
-    # isStateStochastic && @assert isθshared "If state is stochastic, must have shared θ"
+    # useEnKIOpt && @assert isθshared "If state is stochastic, must have shared θ"
 
     return HEnKF(
         x -> x,
@@ -130,7 +130,7 @@ function HEnKF(
         false,
         Niter,
         rtolθ,
-        isStateStochastic,
+        useEnKIOpt,
         )
 end
 

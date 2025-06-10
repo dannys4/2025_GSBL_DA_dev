@@ -2,17 +2,17 @@
 
 function update_x!(
     enkf::HierarchicalSeqFilter,
-    X,
+    X_forecast,
     θ::Matrix{Float64},
     ystar::Vector{Float64},
     t,
+    X_analysis
 )
-
-    @assert enkf.isθshared == false
+    @assert !enkf.isθshared
 
     Ny = size(ystar, 1)
-    Nx = size(X, 1) - Ny
-    Ne = size(X, 2)
+    Nx = size(X_forecast, 1) - Ny
+    Ne = size(X_forecast, 2)
     Ns = enkf.sys.Ns
 
     @assert size(θ, 1) == Ns
@@ -27,7 +27,7 @@ function update_x!(
 
     si = zeros(enkf.sys.Ns)
 
-    ĈX = getĈX(enkf, X, Nx, Ny)
+    ĈX = getĈX(enkf, X_forecast, Nx, Ny)
 
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
@@ -39,24 +39,20 @@ function update_x!(
     # Update covariance matrix
     enkf.sys.CX[1] = ĈX_op
 
+    enkf.sys.Cθ isa LinearMaps.LinearMaps.WrappedMap{Float64} || throw(ArgumentError("Wrong type of theta!"))
+
+    sys_op = LinearMaps.FunctionMap{Float64,true}(
+        (y, x) -> mul!(y, enkf.sys, x),
+        Ny + Ns;
+        issymmetric = true,
+        isposdef = true,
+    )
+    if X_forecast !== X_analysis
+        copy!(view(X_analysis, Ny+1:Ny+Nx, :), view(X_forecast, Ny+1:Ny+Nx, :))
+    end
 
     for i = 1:Ne
-        # Update weight vector θ
-        if typeof(enkf.sys.Cθ) <: LinearMaps.LinearMaps.WrappedMap{Float64}
-            enkf.θ[:, i] .= θ[:, i]
-            enkf.sys.Cθ.lmap.diag .= θ[:, i]
-        else
-            error("Wrong type for Cθ")
-        end
-
-        sys_op = LinearMaps.FunctionMap{Float64,true}(
-            (y, x) -> mul!(y, enkf.sys, x),
-            Ny + Ns;
-            issymmetric = true,
-            isposdef = true,
-        )
-
-        if enkf.isiterative == false
+        if !enkf.isiterative
             sys_mat = zeros(Ny + Ns, Ny + Ns)
 
             ei = zeros(Ny + Ns)
@@ -76,7 +72,7 @@ function update_x!(
 
         δi = zeros(Nx)
 
-        xi = view(X, Ny+1:Ny+Nx, i)
+        xi = view(X_analysis, Ny+1:Ny+Nx, i)
         yi = observation(ys_i)
         si = constraint(ys_i)
 
@@ -87,16 +83,16 @@ function update_x!(
 
         mul!(si, enkf.sys.S, xi)
 
-        if enkf.isiterative == false
+        if enkf.isiterative
             # Invert sys_op
-            ldiv!(ys_i, sys_mat, ys_i)
-        else
             cg!(ys_i, sys_op, copy(ys_i); log = false, reltol = 1e-3)
+        else
+            ldiv!(ys_i, sys_mat, ys_i)
         end
 
         δi .= enkf.sys.H' * observation(ys_i)
         δi .+= enkf.sys.S' * constraint(ys_i)
 
-        xi .+= -(ĈX * δi)
+        xi .-= (ĈX * δi)
     end
 end

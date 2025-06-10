@@ -57,8 +57,8 @@ struct HLocEnKF <: HierarchicalSeqFilter
     "Initialization of θ in IAS"
     θinit::Float64
 
-    "Use stochastic samples of the state or not"
-    isStateStochastic::Bool
+    "Use Ensemble Kalman inversion while finding θ"
+    useEnKIOpt::Bool
 end
 
 function HLocEnKF(
@@ -76,7 +76,7 @@ function HLocEnKF(
     Niter::Int = 40,
     rtolθ::Float64 = 1e-4,
     θinit::Float64 = 1.,
-    isStateStochastic::Bool = false,
+    useEnKIOpt::Bool = false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -100,7 +100,7 @@ function HLocEnKF(
         Niter,
         rtolθ,
         θinit,
-        isStateStochastic
+        useEnKIOpt
     )
 end
 
@@ -117,14 +117,14 @@ function HLocEnKF(
     Niter::Int = 40,
     rtolθ::Float64 = 1e-4,
     θinit::Float64 = 1.,
-    isStateStochastic::Bool = false
+    useEnKIOpt::Bool = false
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne = Ne)
 
     isθshared = (θ isa Vector)
-    isStateStochastic && @assert isθshared "If state is stochastic, expected θ to be shared"
+    useEnKIOpt && @assert isθshared "If state is stochastic, expected θ to be shared"
     return HLocEnKF(
         x -> x,
         ϵy,
@@ -141,7 +141,7 @@ function HLocEnKF(
         Niter,
         rtolθ,
         θinit,
-        isStateStochastic
+        useEnKIOpt
     )
 end
 
@@ -156,55 +156,50 @@ end
 
 
 function (enkf::HierarchicalSeqFilter)(
-    X,
+    X_forecast,
     ystar::Array{Float64,1},
     t::Float64
 )
-
+    X_analysis = deepcopy(X_forecast)
+    X_forecast_loop = enkf.useEnKIOpt ? X_analysis : X_forecast
     if enkf.isθshared
         # Initial guess?
         fill!(enkf.θ, enkf.θinit)
         
-        # Need original X for update if we do stochastically
-        X_init = enkf.isStateStochastic ? copy(X) : nothing
-
         θold = zero(enkf.θ)
         for _ = 1:enkf.Niter
             copy!(θold, enkf.θ)
 
             # Update x 
-            update_x!(enkf, X, enkf.θ, ystar, t)
+            update_x!(enkf, X_forecast_loop, enkf.θ, ystar, t, X_analysis)
 
             # Update theta
-            update_θ!(enkf, X, enkf.θ, ystar, t)
+            update_θ!(enkf, X_analysis, enkf.θ, ystar, t)
 
             if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
                 break
             end
         end
-        if enkf.isStateStochastic # Given θ, conditionally sample X_t | θ, y_t
-            update_x!(enkf, X_init, enkf.θ, ystar, t)
-            # Move data back into X
-            copy!(X, X_init)
-        end
     else
         enkf.θ .= rand(enkf.dist, enkf.sys.Ns, enkf.sys.Ne)
         θold = zero(enkf.θ)
+
         for _ = 1:enkf.Niter
             copy!(θold, enkf.θ)
 
             # Update theta
-            update_θ!(enkf, X, enkf.θ, ystar, t)
+            update_θ!(enkf, X_analysis, enkf.θ, ystar, t)
 
             # Update x 
-            update_x!(enkf, X, enkf.θ, ystar, t)
+            update_x!(enkf, X_forecast_loop, enkf.θ, ystar, t, X_analysis)
 
             if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
                 break
             end
         end
     end
-    return X, enkf.θ
+    update_x!(enkf, X_forecast, enkf.θ, ystar, t, X_forecast)
+    return X_forecast, enkf.θ
 end
 
 getĈX(enkf::HLocEnKF, X, Nx, Ny; with_matrix=true) = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix)
