@@ -17,7 +17,8 @@ function seqassim_trixi(
     Nx::Int64,
     t0::Float64,
     sys::TrixiSystem;
-    solver = SSPRK43(),
+    ode_solver = SSPRK43(),
+    cfl=0.2,
     ode_kwargs...
 )
 
@@ -48,7 +49,7 @@ function seqassim_trixi(
     # analysis_callback = AnalysisCallback(semi, interval = 100, uEltype = real(dg))
 
     # handles the re-calculation of the maximum Δt after each time step
-    stepsize_callback = StepsizeCallback(cfl = 0.2)
+    stepsize_callback = StepsizeCallback(;cfl)
 
     # collect all callbacks such that they can be passed to the ODE solver
     callbacks = CallbackSet(stepsize_callback)
@@ -58,13 +59,11 @@ function seqassim_trixi(
 
         # Forecast
         tspan = (t0 + (i - 1) * algo.Δtobs, t0 + i * algo.Δtobs)
-
         function prob_func(prob, j, repeat)
             # At this point, the vector x is provided at the Gauss-Legendre nodes
             vec2sol!(x_quad, @view(X[Ny+1:Ny+Nx, j]), sys.equations; g = prim2cons)
             # We need to move them to the Lobatto-Legendre nodes
-            get_interp_node_vals!(sys.dg.basis, x_itp, x_quad)
-
+            get_interp_node_vals!(sys.dg, x_quad, x_itp)
             remake(prob, u0 = x_itp, tspan = tspan)
         end
 
@@ -76,7 +75,7 @@ function seqassim_trixi(
 
         sim = solve(
             ensemble_prob,
-            solver,
+            ode_solver,
             adaptive = true,
             EnsembleSerial(),
             trajectories = Ne,
@@ -84,13 +83,11 @@ function seqassim_trixi(
             save_everystep = false,
             callback = stepsize_callback;
             ode_kwargs...
-            # dtmax = (tspan[2] - tspan[1])/100
         )
 
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
-            # mul!(x_itp, sys.dg.basis.Vq, sim[i])
-            get_quadrature_node_vals!(sys.dg.basis, sim[i], x_quad)
+            get_quadrature_node_vals!(sys.dg, x_quad, sim[i])
             sol2vec!(view(X, Ny+1:Ny+Nx, i), x_quad, sys.equations; g = cons2prim)
         end
 
