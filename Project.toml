@@ -1,7 +1,7 @@
 name = "HierarchicalDA"
 uuid = "b59f95bf-30b4-47d7-8452-ad9e2f5bb16b"
-authors = ["mleprovost <mleprovo@mit.edu>"]
-version = "0.1.0"
+authors = ["mleprovost <mleprovo@mit.edu>", "dannys4 <dannys4@mit.edu>"]
+version = "0.1.1"
 
 [deps]
 BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
@@ -28,5 +28,6 @@ UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 
 [compat]
-TransportBasedInference2 = "0.1.4"
+TransportBasedInference2 = "0.1.5"
+Trixi = "0.9"
 julia = "1.11"
