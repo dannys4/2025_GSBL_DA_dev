@@ -27,6 +27,9 @@ UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 
+[sources]
+TransportBasedInference2 = { url = "https://github.com/dannys4/TransportBasedInference2.jl", rev="main"}
+
 [compat]
 TransportBasedInference2 = "0.1.5"
 Trixi = "0.9"
