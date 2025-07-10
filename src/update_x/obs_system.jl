@@ -22,12 +22,11 @@ end
 size(sys::ObsSystem) = (sys.Ny, sys.Ny)
 
 
-function mul!(output::Vector{Float64}, sys::ObsSystem, input::Vector{Float64})
+function mul!(output::Vector{Float64}, sys::ObsSystem, input::Vector{Float64}, alpha=true, beta=false)
 
     @unpack Nx, Ny, H, Cϵ, CX = sys
-    CX = CX[1]
-    output .= Cϵ * input
-    output .+= H * (CX * (H' * input))
+    output .= alpha * Cϵ * input + beta * output
+    output .+= alpha * H * (CX * (H' * input))
 
     return output
 end

@@ -11,9 +11,9 @@ struct EmpiricalCov <: AbstractEmpiricalCov
     CX::Union{Nothing,Matrix{Float64}}
 end
 
-function EmpiricalCov(X::Matrix{Float64}; with_matrix = true)
+function EmpiricalCov(X::Matrix{Float64}; with_matrix=true)
     Nx, Ne = size(X)
-    μX = mean(X; dims = 2)[:, 1]
+    μX = mean(X; dims=2)[:, 1]
 
     CX = nothing
 
@@ -21,6 +21,10 @@ function EmpiricalCov(X::Matrix{Float64}; with_matrix = true)
         CX = cov(X')
     end
     return EmpiricalCov(Nx, Ne, X, μX, CX)
+end
+
+function Base.Matrix(C::EmpiricalCov)
+    return C.CX
 end
 
 function mul!(v::AbstractVector{Float64}, Ĉ::EmpiricalCov, u::AbstractVector{Float64})
@@ -44,40 +48,40 @@ function (*)(Ĉ::EmpiricalCov, u::AbstractVector{Float64})
     return v
 end
 
-struct LocalizedEmpiricalCov <: AbstractEmpiricalCov
+struct LocalizedEmpiricalCov{
+    LT<:Localization,CT<:Union{Nothing,<:AbstractMatrix{Float64}}
+} <: AbstractEmpiricalCov
+
     Nx::Int64
     Ne::Int64
     X::Matrix{Float64}
     μX::Vector{Float64}
+    Loc::LT
     CX::Union{Nothing,Matrix{Float64}}
-    Loc::Localization
-    ρX::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}
-    CXloc::Union{Nothing,SparseMatrixCSC{Float64,Int64}}
+    CXloc::CT
 end
 
-function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix = true)
+function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix=true)
     Nx, Ne = size(X)
-    μX = mean(X; dims = 2)[:, 1]
-
-    ρX = sparse(Locgaspari((Nx, Nx), Loc.L, Loc.Gxx))
+    μX = mean(X; dims=2)[:, 1]
 
     CX = nothing
     CXloc = nothing
 
     if with_matrix
-        CX = cov(X')
-        CXloc = ρX .* CX
+        CX = cov(X, dims=2)
+        CXloc = Loc.ρX .* CX
     end
 
-    return LocalizedEmpiricalCov(Nx, Ne, X, μX, CX, Loc, ρX, CXloc)
+    return LocalizedEmpiricalCov(Nx, Ne, X, μX, Loc, CX, CXloc)
 end
 
 function mul!(
     v::AbstractVector{Float64},
     Ĉ::LocalizedEmpiricalCov,
     u::AbstractVector{Float64},
-    α = true,
-    β = false
+    α=true,
+    β=false
 )
 
     if isnothing(Ĉ.CX)
@@ -87,7 +91,7 @@ function mul!(
         # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf
         for i = 1:Ĉ.Ne
             xi = view(Ĉ.X, :, i)
-            v .+= Diagonal(xi - Ĉ.μX) * (Ĉ.ρX * ((xi - Ĉ.μX) .* u))
+            v .+= Diagonal(xi - Ĉ.μX) * (Ĉ.Loc.ρX * ((xi - Ĉ.μX) .* u))
             # @show "we haven't applied localization yet, more a placeholder for now"
         end
         v .*= inv(Ĉ.Ne - 1)
@@ -101,4 +105,8 @@ function (*)(Ĉ::LocalizedEmpiricalCov, u::AbstractVector{Float64})
     v = similar(u)
     mul!(v, Ĉ, u)
     return v
+end
+
+function Base.Matrix(C::LocalizedEmpiricalCov)
+    return C.CXloc
 end

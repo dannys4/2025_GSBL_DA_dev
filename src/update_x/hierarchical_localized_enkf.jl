@@ -71,16 +71,16 @@ function HLocEnKF(
     θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
     Δtobs;
-    isiterative = false,
-    isfiltered = false,
-    Niter::Int = 40,
-    rtolθ::Float64 = 1e-4,
-    θinit::Float64 = 1.,
-    useEnKIOpt::Bool = false,
+    isiterative=false,
+    isfiltered=false,
+    Niter::Int=40,
+    rtolθ::Float64=1e-4,
+    θinit::Float64=1.,
+    useEnKIOpt::Bool=false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
-    flow = FlowTheta(dist; Ne = Ne)
+    flow = FlowTheta(dist; Ne=Ne)
 
     isθshared = (θ isa Vector)
 
@@ -114,14 +114,14 @@ function HLocEnKF(
     θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
     Δtobs;
-    Niter::Int = 40,
-    rtolθ::Float64 = 1e-4,
-    θinit::Float64 = 1.,
-    useEnKIOpt::Bool = false
+    Niter::Int=40,
+    rtolθ::Float64=1e-4,
+    θinit::Float64=1.,
+    useEnKIOpt::Bool=false
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
-    flow = FlowTheta(dist; Ne = Ne)
+    flow = FlowTheta(dist; Ne=Ne)
 
     isθshared = (θ isa Vector)
     useEnKIOpt && @assert isθshared "If state is stochastic, expected θ to be shared"
@@ -154,24 +154,41 @@ function Base.show(io::IO, enkf::HLocEnKF)
     )
 end
 
+function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix, Ny::Int)
+    ĈX = getĈX(enkf, X, size(X, 1) - Ny, Ny)
+    ĈX_mat = Matrix(ĈX)
+    if isnothing(ĈX_mat)
+        return FunctionMap{Float64,true}(
+            (y, x) -> mul!(y, ĈX, x),
+            Nx;
+            issymmetric=true,
+            isposdef=false,
+        )
+    else
+        return LinearMap(ĈX_mat)
+    end
+end
 
 function (enkf::HierarchicalSeqFilter)(
     X_forecast,
-    ystar::Array{Float64,1},
+    ystar::Vector{Float64},
     t::Float64
 )
     X_analysis = deepcopy(X_forecast)
     X_forecast_loop = enkf.useEnKIOpt ? X_analysis : X_forecast
+
+    ĈX_op = getĈX_op(enkf, X_forecast, length(ystar))
+
     if enkf.isθshared
         # Initial guess?
         fill!(enkf.θ, enkf.θinit)
-        
+
         θold = zero(enkf.θ)
         for _ = 1:enkf.Niter
             copy!(θold, enkf.θ)
 
             # Update x 
-            update_x!(enkf, X_forecast_loop, enkf.θ, ystar, t, X_analysis)
+            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis)
 
             # Update theta
             update_θ!(enkf, X_analysis, enkf.θ, ystar, t)
@@ -191,14 +208,14 @@ function (enkf::HierarchicalSeqFilter)(
             update_θ!(enkf, X_analysis, enkf.θ, ystar, t)
 
             # Update x 
-            update_x!(enkf, X_forecast_loop, enkf.θ, ystar, t, X_analysis)
+            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis)
 
             if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
                 break
             end
         end
     end
-    update_x!(enkf, X_forecast, enkf.θ, ystar, t, X_forecast)
+    update_x!(enkf, X_forecast, ĈX_op, enkf.θ, ystar, t, X_forecast)
     return X_forecast, enkf.θ
 end
 
