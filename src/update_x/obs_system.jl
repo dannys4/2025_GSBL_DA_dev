@@ -1,32 +1,43 @@
 export ObsSystem
 
-import Base: *, size
+import Base: *, size, Matrix
 import LinearAlgebra: mul!
 
-struct ObsSystem
-    Nx::Int64
-    Ny::Int64
-    H::LinearMap
-    Cϵ::LinearMap
+mutable struct ObsSystem
+    const Nx::Int64
+    const Ny::Int64
+    const H::LinearMap
+    const Cϵ::LinearMap
     # To update the covariance matrix for the state
-    CX::Array{LinearMap}
+    CX::Matrix{Float64}
 end
 
-function ObsSystem(H::LinearMap, Cϵ::LinearMap, CX::LinearMap)
+function ObsSystem(H::LinearMap, Cϵ::LinearMap, CX::Matrix{Float64}=Matrix{Float64}(undef, 0, 0))
     Nx = size(CX, 1)
     Ny = size(H, 1)
 
-    return ObsSystem(Nx, Ny, H, Cϵ, [CX])
+    return ObsSystem(Nx, Ny, H, Cϵ, CX)
 end
 
 size(sys::ObsSystem) = (sys.Ny, sys.Ny)
 
 
+function Base.Matrix(sys::ObsSystem)
+    # Suppose we have [y,]
+    # Then we get sys =
+    # [ Ce + H * CX * H' ]
+    @unpack Nx, Ny, H, Cϵ, CX = sys
+    out = Matrix(Cϵ)
+    mul!(out, H.lmap, (CX * H.lmap'), true, true)
+    return Hermitian(out)
+end
+
+
 function mul!(output::Vector{Float64}, sys::ObsSystem, input::Vector{Float64}, alpha=true, beta=false)
 
     @unpack Nx, Ny, H, Cϵ, CX = sys
-    output .= alpha * Cϵ * input + beta * output
-    output .+= alpha * H * (CX * (H' * input))
+    mul!(output, Cϵ, input, alpha, beta)
+    mul!(output, H, CX * (H' * input), alpha, true)
 
     return output
 end

@@ -47,8 +47,8 @@ function LocEnKF(
     Loc::Localization,
     Δtdyn,
     Δtobs;
-    isiterative = false,
-    isfiltered = false,
+    isiterative=false,
+    isfiltered=false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -80,7 +80,7 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analy
     Ny = size(ystar, 1)
     Nx = size(X_forecast, 1) - Ny
     Ne = size(X_forecast, 2)
-    
+
     # Use in-place updates
     @assert X_forecast === X_analysis
     @assert size(ystar, 1) == Ny
@@ -92,35 +92,22 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analy
     end
 
     ĈX = getĈX(enkf, X_forecast, Nx, Ny)
-    ĈX_op = FunctionMap{Float64,true}(
-        (y, x) -> mul!(y, ĈX, x),
-        Nx;
-        issymmetric = true,
-        isposdef = false,
-    )
 
     # Update covariance matrix
-    enkf.sys.CX[1] = ĈX_op
+    enkf.sys.CX = ĈX.CXloc
 
-    sys_op = LinearMaps.FunctionMap{Float64,true}(
-        (y, x) -> mul!(y, enkf.sys, x),
-        Ny;
-        issymmetric = true,
-        isposdef = true,
-    )
-
-    if !enkf.isiterative
-        sys_mat = zeros(Ny, Ny)
-
-        ei = zeros(Ny)
-        for i = 1:Ny
-            fill!(ei, 0.0)
-            ei[i] = 1.0
-            sys_mat[:, i] = sys_op * ei
-        end
-
-        sys_mat = factorize(Symmetric(sys_mat))
+    if enkf.isiterative
+        sys_op = LinearMaps.FunctionMap{Float64,true}(
+            (y, x) -> mul!(y, enkf.sys, x),
+            Ny + Nz;
+            issymmetric=true,
+            isposdef=true,
+        )
+    else
+        # @show cond(sys_mat)
+        sys_mat = bunchkaufman!(Matrix(enkf.sys))
     end
+
 
     # Compute Kalman-update in a matrix-free way
 
@@ -131,7 +118,7 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analy
         xi = view(X_analysis, Ny+1:Ny+Nx, i)
 
         mul!(yi, enkf.sys.H, xi)
-        @assert isapprox(yi, enkf.sys.H * xi, atol = 1e-8)
+        @assert isapprox(yi, enkf.sys.H * xi, atol=1e-8)
 
         yi .+= E[:, i] - ystar
 
@@ -139,7 +126,7 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analy
             yi .= sys_mat \ yi
         else
             # Invert sys_op
-            cg!(yi, sys_op, copy(yi); log = false, reltol = 1e-3)
+            cg!(yi, sys_op, copy(yi); log=false, reltol=1e-3)
         end
 
         δi .= enkf.sys.H' * yi
