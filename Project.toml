@@ -30,7 +30,7 @@ Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
 
 [sources]
 TransportBasedInference2 = {rev = "main", url = "https://github.com/dannys4/TransportBasedInference2.jl"}
-Trixi = {rev = "origin/move_oneto_v_0_9", url = "https://github.com/dannys4/Trixi.jl"}
+Trixi = {rev = "move_oneto_v_0_9", url = "https://github.com/dannys4/Trixi.jl"}
 
 [compat]
 TransportBasedInference2 = "0.1.5"
