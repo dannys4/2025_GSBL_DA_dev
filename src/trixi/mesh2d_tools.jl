@@ -1,0 +1,209 @@
+export VerticalPolyAnnil2D
+using TransportBasedInference2: Localization
+# Because this uses intrinsic types from StartupDG, we keep this in the trixi subdir
+function get_vertical_slice_elements(slice_idx, polydeg, N_cells)
+    # Which element in a given horizontal set of elements is this in
+    horiz_elem_idx = (slice_idx - 1) ÷ (polydeg + 1) + 1
+    # Which vertical slice within the element is this in
+    (0:N_cells-1) * N_cells .+ horiz_elem_idx
+end
+
+function get_vertical_slice_nodes(slice_idx, polydeg)
+    shap_slice = mod1(slice_idx, polydeg + 1)
+    reshape(1:(polydeg+1)^2, polydeg + 1, :)[shap_slice, :]
+end
+
+function get_square_mesh_N_cells(mesh::DGMultiMesh{2,Trixi.Affine})
+    mesh.md.mesh_type isa Trixi.StartUpDG.VertexMappedMesh{Quad} || ArgumentError("Expected mesh to have quad elements. Got mesh type $(mesh.md.mesh_type)")
+    N_cells = -1
+    try
+        N_cells = Int(sqrt(length(mesh.md.VX))) - 1
+    catch e
+        if e isa InexactError
+            Nx, Ny = length(unique(mesh.md.VX)) - 1, length(unique(mesh.md.VY)) - 1
+            ArgumentError("VerticalPolyAnnil2D only supports meshes with the same number of elements on each axis. Got ($Nx, $Ny)")
+        else
+            rethrow(e)
+        end
+    end
+    return N_cells
+end
+
+# Only works with 2d non-curved meshes with quad elements
+function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int)
+    N_cells = get_square_mesh_N_cells(mesh)
+    yq = mesh.md.yq
+    polydeg = Int(sqrt(size(yq, 1))) - 1
+    init_slice_idx = 1
+    # Initialize the local polynomial annihilator
+    vv = get_vertical_slice_elements(init_slice_idx, polydeg, N_cells)
+    nn = get_vertical_slice_nodes(init_slice_idx, polydeg)
+    all_y_quad = yq[nn, vv]
+    vec_quad = all_y_quad[:]
+    PA_local = PolyAnnil(vec_quad, PA_order).P
+    num_nodes = length(mesh.md.mapM)
+    # Now create the global polynomial annihilator
+    PA_global = spzeros(num_nodes, num_nodes)
+    # There are polydeg+1 slices per element and N_cells elements per side
+    for slice_idx in 1:((polydeg+1)*N_cells)
+        vv = get_vertical_slice_elements(slice_idx, polydeg, N_cells)
+        nn = get_vertical_slice_nodes(slice_idx, polydeg)
+        # node_idxs are equiv to reduce(vcat, nn .+ (j-1)*N_cells*(polydeg+1)*(polydeg+1) for j in 1:N_cells)
+        # Gets the indices of the nodes corresponding to this PA operator
+        node_idxs = vec(mesh.md.mapM[nn, vv])
+        PA_global[node_idxs, node_idxs] = PA_local
+    end
+    # PolyAnnil(vec_quad, PA_order, )
+    PA_global, vec_quad
+end
+
+function VerticalPolyAnnil2D(mesh, PA_order, Nvar=1)
+    base_PA, vec_quad = __VerticalPolyAnnil2D(mesh, PA_order)
+    full_PA = Nvar == 1 ? base_PA : kron(base_PA, I(Nvar))
+    # N_row, N_col = size(base_PA)
+    # full_PA = spzeros(Nvar * N_row, Nvar * N_col)
+    # for diag_block in 1:Nvar
+    #     row_idxs = (1:N_row) .+ (diag_block - 1) * N_row
+    #     col_idxs = (1:N_col) .+ (diag_block - 1) * N_col
+    #     full_PA[row_idxs, col_idxs] .= base_PA
+    # end
+    PolyAnnil(vec_quad, PA_order, full_PA)
+end
+
+gaspari2D(offset_x, offset_y, radius) = gaspari((abs2(offset_x) + abs2(offset_y)) / radius)
+
+function LocalizationMatrix2D(
+    mesh::DGMultiMesh{2,Trixi.Affine},
+    local_radius::Int,
+    kernel::Function,
+    isperiodic::Bool)
+
+    N_cells = get_square_mesh_N_cells(mesh)
+    (; yq, mapM) = mesh.md
+    polydeg = Int(sqrt(size(yq, 1))) - 1
+    # @assert local_radius <= polydeg + 1 "Currently only supports radius that is below polynomial degree. Got $local_radius > $(polydeg+1)"
+    mapM_reshape = reshape(mapM, polydeg + 1, polydeg + 1, N_cells, N_cells)
+
+    # How many elements over the index is
+    get_elem_offset(idx) = sign(idx - 1) * ((idx < 1) + (abs(idx) - (idx > polydeg)) ÷ (polydeg + 1))
+
+    rows, cols, vals = Int[], Int[], Float64[]
+    for (node_matrix_row_idx, c_idx) in enumerate(CartesianIndices(mapM_reshape))
+        elem_row_idx, elem_col_idx, global_row_idx, global_col_idx = Tuple(c_idx)
+        for location_offset in CartesianIndices((-local_radius:local_radius, -local_radius:local_radius))
+            row_offset_rad, col_offset_rad = Tuple(location_offset)
+            row_offset = elem_row_idx + row_offset_rad
+            col_offset = elem_col_idx + col_offset_rad
+            # Find where the neighbor is within the element
+            row_elem_neigh = mod1(row_offset, polydeg + 1)
+            col_elem_neigh = mod1(col_offset, polydeg + 1)
+            # Find which element the neighbor belongs to
+            row_global_neigh = global_row_idx + get_elem_offset(row_offset)
+            col_global_neigh = global_col_idx + get_elem_offset(col_offset)
+
+            if !isperiodic # If not periodic, check if we step over the bounds
+                invalid_row = row_global_neigh > N_cells || row_global_neigh < 1
+                invalid_col = col_global_neigh > N_cells || col_global_neigh < 1
+                (invalid_row || invalid_col) && continue
+            end
+            # Wrap around for periodicity
+            row_global_neigh = mod1(row_global_neigh, N_cells)
+            col_global_neigh = mod1(col_global_neigh, N_cells)
+            # Get the neighbor's node index in the global matrix
+            node_idx_neigh = mapM_reshape[row_elem_neigh, col_elem_neigh, row_global_neigh, col_global_neigh]
+            # Calculate the value for the localization
+            val = kernel(row_offset_rad, col_offset_rad)
+            push!(rows, node_matrix_row_idx)
+            push!(cols, node_idx_neigh)
+            push!(vals, val)
+        end
+    end
+    ret = sparse(rows, cols, vals)
+    dropzeros!(ret)
+    ret
+end
+
+# Metric should map (row_diff::Int, col_diff::Int) -> Float64
+# If you are comparing integer coords (5, 8) and (7, 2), then output should assume input (-2, 6)
+"""
+    Localization(mesh::DGMultiMesh{2,Trixi.Affine}, local_radius::Int; kernel::Function, isperiodic=true, Nvar=1)
+
+Determine the localization via a kernel(dx, dy). Defaults to a gaspari-cohn kernel determined by `local_radius`.
+
+"""
+function TransportBasedInference2.Localization(
+    mesh::DGMultiMesh{2,Trixi.Affine},
+    local_radius::Int;
+    kernel::Function=(x, y) -> gaspari2D(x, y, local_radius),
+    isperiodic=true,
+    Nvar::Int=1
+)
+    loc = LocalizationMatrix2D(mesh, local_radius, kernel, isperiodic)
+    loc_vars = Nvar == 1 ? loc : kron(loc, I(Nvar))
+    return Localization(loc_vars)
+end
+
+function create_observation_indices(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
+    @assert offset < spacing
+    N_cells = get_square_mesh_N_cells(mesh)
+    (; yq, mapM) = mesh.md
+    polydeg = Int(sqrt(size(yq, 1))) - 1
+    # @assert spacing % (polydeg + 1) == 0
+    # @assert local_radius <= polydeg + 1 "Currently only supports radius that is below polynomial degree. Got $local_radius > $(polydeg+1)"
+    mapM_reshape = reshape(mapM, polydeg + 1, polydeg + 1, N_cells, N_cells)
+
+    # How many elements over the index is
+    get_elem_offset(idx) = sign(idx - 1) * ((idx < 1) + (abs(idx) - (idx > polydeg)) ÷ (polydeg + 1))
+
+    num_obs = ceil(Int, N_cells * (polydeg + 1) / spacing)^2
+    obs_indices = zeros(Int, num_obs)
+    obs_idx = 1
+    for (node_matrix_idx, c_idx) in enumerate(CartesianIndices(mapM_reshape))
+        elem_row_idx, elem_col_idx, global_row_idx, global_col_idx = Tuple(c_idx)
+        row_idx = (global_row_idx - 1) * (polydeg + 1) + elem_row_idx
+        col_idx = (global_col_idx - 1) * (polydeg + 1) + elem_col_idx
+        is_row_spaced = row_idx % spacing == offset # Make sure to get first column
+        is_col_spaced = col_idx % spacing == offset
+        if is_row_spaced && is_col_spaced
+            obs_indices[obs_idx] = node_matrix_idx
+            obs_idx += 1
+        end
+    end
+    obs_mat = sparse(1:num_obs, obs_indices, ones(num_obs), num_obs, length(mapM_reshape))
+    return LinearMap(obs_mat)
+end
+
+function create_observation_indices(mesh::DGMultiMesh{2}, spacing::Int; offset::Int=1, Nvar::Int=1, which_var::AbstractVector=1:Nvar)
+    base_H = create_observation_indices(mesh, spacing, offset)
+    Nvar == 1 && return base_H
+    select_kron = which_var == 1:Nvar ? I(Nvar) : I(Nvar)[which_var, :]
+    return kron(base_H, select_kron)
+end
+
+function sample_initial_state(f0_row, f0_col, mesh::DGMultiMesh{2}; Nvar=1, transform_fcn=ntuple(Returns(identity), Nvar), f0_scale=0.5)
+    @assert length(transform_fcn) == Nvar
+    Nx_var = length(mesh.md.xq)
+    x0_ens = Matrix{Float64}(undef, Nx_var, Nvar)
+    # Crude way of getting one dimensional grid, need to round due to numerical issues.
+    grid1d = unique(x -> round(x, digits=5), mesh.md.xq)
+    Ncells_dim = Int(sqrt(length(mesh.md.VX)) - 1)
+    polydeg = Int((length(grid1d) / Ncells_dim) - 1)
+    f0_row_eval = f0_row(grid1d)
+    f0_col_eval = f0_col(grid1d)
+    for which_var in 1:Nvar
+        regenerate!(f0_row)
+        regenerate!(f0_col)
+        fcn = transform_fcn[which_var]
+        f0_row(f0_row_eval, grid1d)
+        f0_col(f0_col_eval, grid1d)
+        var_ens = @view x0_ens[:, which_var]
+        for (lin_idx, c_idx) in enumerate(CartesianIndices((1:(polydeg+1), 1:(polydeg+1), 1:Ncells_dim, 1:Ncells_dim)))
+            in_elem_row, in_elem_col, global_elem_row, global_elem_col = Tuple(c_idx)
+            # These are each the indices for the f0_row_eval and f0_col_eval, respectively
+            global_idx_row = (global_elem_row - 1) * (polydeg + 1) + in_elem_row
+            global_idx_col = (global_elem_col - 1) * (polydeg + 1) + in_elem_col
+            var_ens[lin_idx] = fcn(f0_scale * (f0_row_eval[global_idx_row] + f0_col_eval[global_idx_col]))
+        end
+    end
+    return vec(x0_ens')
+end

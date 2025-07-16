@@ -12,7 +12,7 @@ end
 # Build the operator
 # x: nodes
 # m: order of the PA operator
-function PolyAnnil(x::Vector, m::Int64; Nvar::Int64 = 1, istruncated = false)#, dist::Distances.UnionMetric; isperiodic = true)
+function PolyAnnil(x::Vector, m::Int64; Nvar::Int64=1, istruncated=false)#, dist::Distances.UnionMetric; isperiodic = true)
     n = length(x)
 
     PA = zeros(Nvar * n, Nvar * n)
@@ -22,10 +22,9 @@ function PolyAnnil(x::Vector, m::Int64; Nvar::Int64 = 1, istruncated = false)#, 
     # Discard the nodes near the edges
     xidx = r+1:n-r
 
-    for i in xidx
+    Threads.@threads for i in xidx
         xi = x[i]
-        #         idxi = partialsortperm(view(Σdist,i,:), 1:m)
-        if mod(m, 2) == 0
+        if iseven(m)
             idxi = i-r:i+r
         else
             idxi = i-r:i+r-1
@@ -37,9 +36,10 @@ function PolyAnnil(x::Vector, m::Int64; Nvar::Int64 = 1, istruncated = false)#, 
         qi = 0.0
         for j in idxi
             xj = x[j]
+            # abs(xj - xi) <= 1e-11 && continue
             ωj_xi = prod(xj - x[k] for k in idxi if k != j)
             cj_xi = factorial(m) / ωj_xi
-            if xj >= xi
+            if xj > xi + 1e-10
                 qi += cj_xi
             end
             for k = 1:Nvar
@@ -50,47 +50,11 @@ function PolyAnnil(x::Vector, m::Int64; Nvar::Int64 = 1, istruncated = false)#, 
             PA[(k-1)*n+i, :] ./= qi
         end
     end
-
-    if istruncated
-        return PolyAnnil(x, m, sparse(PA[unroll(xidx, n, Nvar), :]))
-    else
-        return PolyAnnil(x, m, sparse(PA))
-    end
+    trunc_PA = istruncated ? PA[unroll(xidx, n, Nvar), :] : PA
+    return PolyAnnil(x, m, sparse(trunc_PA))
 end
 
 mul!(s::AbstractVector, P::PolyAnnil, x::AbstractVector) = mul!(s, P.P, x)
+mul!(s::AbstractVector, P::PolyAnnil, x::AbstractVector, alpha, beta) = mul!(s, P.P, x, alpha, beta)
 
 (*)(P::PolyAnnil, x) = P.P * x
-
-#function barycentric_weights(nodes)
-# n_nodes = length(nodes)
-# weights = ones(n_nodes)
-
-# for j in 2:n_nodes, k in 1:(j - 1)
-#     weights[k] *= nodes[k] - nodes[j]
-#     weights[j] *= nodes[j] - nodes[k]
-# end
-
-# for j in 1:n_nodes
-#     weights[j] = 1 / weights[j]
-# end
-
-# return weights
-# end
-
-# Routine from Trixi.jl to compute weights.
-# function barycentric_weights(nodes)
-#     n_nodes = length(nodes)
-#     weights = ones(n_nodes)
-
-#     for j in 2:n_nodes, k in 1:(j - 1)
-#         weights[k] *= nodes[k] - nodes[j]
-#         weights[j] *= nodes[j] - nodes[k]
-#     end
-
-#     for j in 1:n_nodes
-#         weights[j] = 1 / weights[j]
-#     end
-
-#     return weights
-# end

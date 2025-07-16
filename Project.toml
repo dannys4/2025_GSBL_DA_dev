@@ -33,5 +33,6 @@ TransportBasedInference2 = {rev = "main", url = "https://github.com/dannys4/Tran
 Trixi = {rev = "move_oneto_v_0_9", url = "https://github.com/dannys4/Trixi.jl"}
 
 [compat]
+BandedMatrices = "1.9.4"
 TransportBasedInference2 = "0.1.5"
 julia = "1.11"

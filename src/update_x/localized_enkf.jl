@@ -76,9 +76,9 @@ function Base.show(io::IO, enkf::LocEnKF)
     )
 end
 
-function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analysis)
+function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t, X_analysis)
     Ny = size(ystar, 1)
-    Nx = size(X_forecast, 1) - Ny
+    Nx = size(X_forecast, 1)
     Ne = size(X_forecast, 2)
 
     # Use in-place updates
@@ -86,24 +86,35 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analy
     @assert size(ystar, 1) == Ny
 
     # Generate observational noise samples
-    E = zeros(Ny, Ne)
+    errs = repeat(-ystar, 1, Ne)
     if enkf.ϵy isa AdditiveInflation
-        E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
+        if has_nonzero_mean(enkf.ϵy)
+            errs .+= enkf.ϵy.m
+        end
+        errs_samp = zeros(Ny)
+        for j in axes(errs, 2)
+            randn!(errs_samp)
+            mul!(@view(errs[:, j]), enkf.ϵy.σ, errs_samp, true, true)
+        end
+        # E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
     end
 
-    ĈX = getĈX(enkf, X_forecast, Nx, Ny)
-
-    # Update covariance matrix
-    enkf.sys.CX = ĈX.CXloc
+    # Only form covariance mat iff enkf is not iterative
+    ĈX = getĈX(enkf, X_forecast, Nx, Ny; with_matrix=!enkf.isiterative)
 
     if enkf.isiterative
-        sys_op = LinearMaps.FunctionMap{Float64,true}(
+        enkf.sys.CX = ĈX
+
+        sys_op = LinearMap{Float64}(
             (y, x) -> mul!(y, enkf.sys, x),
-            Ny + Nz;
+            Ny;
             issymmetric=true,
-            isposdef=true,
+            isposdef=false,
         )
     else
+        # Update covariance matrix
+        enkf.sys.CX = ĈX.CXloc
+
         # @show cond(sys_mat)
         sys_mat = bunchkaufman!(Matrix(enkf.sys))
     end
@@ -111,31 +122,41 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::Vector{Float64}, t, X_analy
 
     # Compute Kalman-update in a matrix-free way
 
-    yi = zeros(Ny)
+    # yi = zeros(Ny)
+    iterative_RHS = enkf.isiterative ? similar(ystar) : nothing
     δi = zeros(Nx)
 
-    for i = 1:Ne
-        xi = view(X_analysis, Ny+1:Ny+Nx, i)
+    for i = 1:3
+        @info "" i
+        err_i = @view errs[:, i]
+        xi = @view X_analysis[:, i]
 
-        mul!(yi, enkf.sys.H, xi)
-        @assert isapprox(yi, enkf.sys.H * xi, atol=1e-8)
+        # yi .= enkf.sys.H * xi + E[:, i] - ystar
+        mul!(err_i, enkf.sys.H, xi, true, true)
+        @info "Calc yi."
+        # @assert isapprox(yi, enkf.sys.H * xi, atol=1e-8)
 
-        yi .+= E[:, i] - ystar
 
-        if !enkf.isiterative
-            yi .= sys_mat \ yi
-        else
+        if enkf.isiterative
             # Invert sys_op
-            cg!(yi, sys_op, copy(yi); log=false, reltol=1e-3)
+            copy!(iterative_RHS, err_i)
+            cg!(err_i, sys_op, iterative_RHS; log=false, verbose=true, reltol=1e-2)
+        else
+            # yi .= sys_mat \ yi
+            ldiv!(sys_mat, yi)
         end
+        @info "solved."
 
-        δi .= enkf.sys.H' * yi
+        # δi .= enkf.sys.H' * yi
+        mul!(δi, enkf.sys.H', err_i)
+        @info "finished δi"
 
-        xi .+= -(ĈX * δi)
+        # xi .-= ĈX * δi
+        mul!(xi, ĈX, δi, true, -1)
     end
 end
 
-function (enkf::LocEnKF)(X, ystar::Array{Float64,1}, t::Float64)
+function (enkf::LocEnKF)(X, ystar::AbstractVector{Float64}, t::Float64)
 
     # Update x 
     update_x!(enkf, X, ystar, t, X)
@@ -143,4 +164,4 @@ function (enkf::LocEnKF)(X, ystar::Array{Float64,1}, t::Float64)
     return X
 end
 
-getĈX(enkf::LocEnKF, X, Nx, Ny; with_matrix=true) = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix)
+getĈX(enkf::LocEnKF, X, Nx, Ny; with_matrix=true) = LocalizedEmpiricalCov(X, enkf.Loc; with_matrix)

@@ -40,6 +40,10 @@ end
 
 size(sys::ObsConstraintSystem) = (sys.Ny + sys.Nz, sys.Ny + sys.Nz)
 
+function _muladd!(Out, A, B)
+    mul!(Out, A, B, true, true)
+end
+
 function mul!(
     output::ObsConstraintVector,
     sys::ObsConstraintSystem,
@@ -51,13 +55,33 @@ function mul!(
 
     @unpack H, S, Cθ, Cϵ, CX = sys
 
-    output.x[1] .= Cϵ * y
-    output.x[1] .+= H * (CX * (H' * y))
-    output.x[1] .+= H * (CX * (S' * s))
+    fill!(output, zero(eltype(output)))z
 
-    output.x[2] .= S * (CX * (H' * y))
-    output.x[2] .+= Cθ * s
-    output.x[2] .+= S * (CX * (S' * s))
+    out_y = output.x[1]
+    out_s = output.x[1]
+    tmp_X1 = Vector{Float64}(undef, size(CX, 1))
+    tmp_X2 = similar(tmp_X1)
+
+    mul!(out_y, Cϵ, y)
+    mul!(out_s, Cθ, s)
+
+    mul!(tmp_X1, H', y)
+    mul!(tmp_X2, CX, tmp_1)
+    _muladd!(out_y, H, tmp_X2)
+    _muladd!(out_s, S, tmp_X2)
+
+    mul!(tmp_X1, S', s)
+    mul!(tmp_X2, CX, tmp_X1)
+    _muladd!(out_y, H, tmp_X2)
+    _muladd!(out_s, S, tmp_X2)
+
+    # output.x[1] .= Cϵ * y
+    # output.x[1] .+= H * (CX * (H' * y))
+    # output.x[1] .+= H * (CX * (S' * s))
+
+    # output.x[2] .= S * (CX * (H' * y))
+    # output.x[2] .+= Cθ * s
+    # output.x[2] .+= S * (CX * (S' * s))
 
     return output
 end
@@ -66,10 +90,6 @@ function (*)(sys::ObsConstraintSystem, input::ObsConstraintVector)
     output = similar(input)
     mul!(output, sys, input)
     return output
-end
-
-function _muladd!(Out, A, B)
-    mul!(Out, A, B, true, true)
 end
 
 function Base.Matrix(sys::ObsConstraintSystem)

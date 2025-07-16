@@ -49,49 +49,70 @@ function (*)(Ĉ::EmpiricalCov, u::AbstractVector{Float64})
 end
 
 struct LocalizedEmpiricalCov{
-    LT<:Localization,CT<:Union{Nothing,<:AbstractMatrix{Float64}}
+    LT<:Localization,CT<:Union{Nothing,<:AbstractMatrix{Float64}},W
 } <: AbstractEmpiricalCov
 
     Nx::Int64
     Ne::Int64
-    X::Matrix{Float64}
+    center_X::Matrix{Float64}
     μX::Vector{Float64}
     Loc::LT
     CX::Union{Nothing,Matrix{Float64}}
     CXloc::CT
+    workspace::W
 end
 
 function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix=true)
     Nx, Ne = size(X)
-    μX = mean(X; dims=2)[:, 1]
+    μX = vec(mean(X; dims=2))
+    center_X = copy(X)
+    @. center_X = center_X - μX
 
     CX = nothing
     CXloc = nothing
+    workspace = nothing
 
     if with_matrix
-        CX = cov(X, dims=2)
+        CX = center_X * center_X'
         CXloc = Loc.ρX .* CX
+    else
+        workspace = (similar(μX), similar(μX))
     end
 
-    return LocalizedEmpiricalCov(Nx, Ne, X, μX, Loc, CX, CXloc)
+    return LocalizedEmpiricalCov(Nx, Ne, center_X, μX, Loc, CX, CXloc, workspace)
 end
 
 function mul!(
     v::AbstractVector{Float64},
     Ĉ::LocalizedEmpiricalCov,
     u::AbstractVector{Float64},
-    α=true,
-    β=false
+    α, β
 )
 
     if isnothing(Ĉ.CX)
-        @assert α && !β
-        fill!(v, zero(eltype(v)))
-
-        # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf
+        # @assert α && !β
+        if β isa Bool
+            # If beta = false, fill with zeros
+            # Otherwise, v should stay as-is
+            β || fill!(v, zero(eltype(v)))
+        else
+            # If beta is not a bool, just straight-up multiply
+            v .*= β
+        end
+        tmp = Ĉ.workspace[1]
+        tmp_loc = Ĉ.workspace[2]
+        # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf, slide 4
+        # (A ⊙ ∑ u_j v_j^T) x = ∑ D_{u_j} A D_{v_j} x
+        # = ∑ u_j ⊙ (A (v_j ⊙ x))
         for i = 1:Ĉ.Ne
-            xi = view(Ĉ.X, :, i)
-            v .+= Diagonal(xi - Ĉ.μX) * (Ĉ.Loc.ρX * ((xi - Ĉ.μX) .* u))
+            xi = @view Ĉ.center_X[:, i]
+            # Recall that xi is centered in constructor.
+            # v .+= Diagonal(xi) * (Ĉ.Loc.ρX * (xi .* u))
+            @. tmp = xi * u
+            mul!(tmp_loc, Ĉ.Loc.ρX, tmp, α, false)
+            for state_idx in eachindex(v)
+                v[state_idx] = muladd(xi[state_idx], tmp_loc[state_idx], v[state_idx])
+            end
             # @show "we haven't applied localization yet, more a placeholder for now"
         end
         v .*= inv(Ĉ.Ne - 1)
@@ -100,6 +121,8 @@ function mul!(
     end
     return v
 end
+
+mul!(v, Ĉ::LocalizedEmpiricalCov, u) = mul!(v, Ĉ, u, true, false)
 
 function (*)(Ĉ::LocalizedEmpiricalCov, u::AbstractVector{Float64})
     v = similar(u)

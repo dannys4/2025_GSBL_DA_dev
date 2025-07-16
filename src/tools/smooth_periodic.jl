@@ -8,7 +8,7 @@ struct SmoothPeriodic
     ĉ::Vector{ComplexF64}
 end
 
-function SmoothPeriodic(x::Vector{Float64}, α; L = 1.0, Nvar::Int64 = 1)
+function SmoothPeriodic(x::Vector{Float64}, α; L=1.0, Nvar::Int64=1)
     N = length(x)
     ĉ = zeros(ComplexF64, Nvar * N)
 
@@ -21,7 +21,7 @@ function SmoothPeriodic(x::Vector{Float64}, α; L = 1.0, Nvar::Int64 = 1)
     return SmoothPeriodic(N, Nvar, L, α, ĉ)
 end
 
-function SmoothPeriodic(N::Int64, α; L = 1.0, Nvar::Int64 = 1)
+function SmoothPeriodic(N::Int64, α; L=1.0, Nvar::Int64=1)
     ĉ = zeros(ComplexF64, Nvar * N)
 
     for k = 1:N
@@ -37,10 +37,10 @@ end
     sum(k -> real(f.ĉ[k] * exp(im * 2 * π * (k - 1) * x / f.L)), 1:f.N)
 
 
-function (f::SmoothPeriodic)(xgrid::AbstractVector)
+function (f::SmoothPeriodic)(out::AbstractVector, xgrid::AbstractVector)
     @assert length(xgrid) == f.N
 
-    out = zeros(length(xgrid) * f.Nvar)
+    @assert length(out) == length(xgrid) * f.Nvar
 
     for (i, xi) in enumerate(xgrid)
         for k = 1:f.N
@@ -50,6 +50,12 @@ function (f::SmoothPeriodic)(xgrid::AbstractVector)
             end
         end
     end
+    return out
+end
+
+function (f::SmoothPeriodic)(xgrid::AbstractVector)
+    out = zeros(length(xgrid) * f.Nvar)
+    f(out, xgrid)
     return out
 end
 # = sum(k -> real(f.ĉ[k] * exp(im * 2 * π * (k - 1) * x / f.L)), 1:f.N)
