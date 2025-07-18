@@ -1,4 +1,4 @@
-export VerticalPolyAnnil2D
+export VerticalPolyAnnil2D, create_observation_operator
 using TransportBasedInference2: Localization
 # Because this uses intrinsic types from StartupDG, we keep this in the trixi subdir
 function get_vertical_slice_elements(slice_idx, polydeg, N_cells)
@@ -59,7 +59,8 @@ end
 
 function VerticalPolyAnnil2D(mesh, PA_order, Nvar=1)
     base_PA, vec_quad = __VerticalPolyAnnil2D(mesh, PA_order)
-    full_PA = Nvar == 1 ? base_PA : kron(base_PA, I(Nvar))
+    select_kron = IdentityMap(Nvar)
+    full_PA = Nvar == 1 ? base_PA : kron(base_PA, select_kron)
     # N_row, N_col = size(base_PA)
     # full_PA = spzeros(Nvar * N_row, Nvar * N_col)
     # for diag_block in 1:Nvar
@@ -67,7 +68,8 @@ function VerticalPolyAnnil2D(mesh, PA_order, Nvar=1)
     #     col_idxs = (1:N_col) .+ (diag_block - 1) * N_col
     #     full_PA[row_idxs, col_idxs] .= base_PA
     # end
-    PolyAnnil(vec_quad, PA_order, full_PA)
+    #TODO: Remove Matrix!
+    PolyAnnil(vec_quad, PA_order, sparse(full_PA))
 end
 
 gaspari2D(offset_x, offset_y, radius) = gaspari((abs2(offset_x) + abs2(offset_y)) / radius)
@@ -118,13 +120,21 @@ function LocalizationMatrix2D(
             push!(vals, val)
         end
     end
-    ret = sparse(rows, cols, vals)
-    dropzeros!(ret)
-    ret
+    return rows, cols, vals
 end
 
-# Metric should map (row_diff::Int, col_diff::Int) -> Float64
-# If you are comparing integer coords (5, 8) and (7, 2), then output should assume input (-2, 6)
+function block_toeplitz_tridiag(matrix, block_size)
+    N = size(matrix, 1)
+    num_blocks = N ÷ block_size
+    main_block = matrix[1:block_size, 1:block_size]
+    upper_block = matrix[1:block_size, block_size.+(1:block_size)]
+    lower_block = matrix[block_size.+(1:block_size), 1:block_size]
+    main_full = kron(IdentityMap(num_blocks), main_block)
+    upper_full = kron(LinearMap(diagm(1 => ones(Bool, num_blocks - 1))), upper_block)
+    lower_full = kron(LinearMap(diagm(-1 => ones(Bool, num_blocks - 1))), lower_block)
+    return main_full + upper_full + lower_full
+end
+
 """
     Localization(mesh::DGMultiMesh{2,Trixi.Affine}, local_radius::Int; kernel::Function, isperiodic=true, Nvar=1)
 
@@ -138,12 +148,57 @@ function TransportBasedInference2.Localization(
     isperiodic=true,
     Nvar::Int=1
 )
-    loc = LocalizationMatrix2D(mesh, local_radius, kernel, isperiodic)
-    loc_vars = Nvar == 1 ? loc : kron(loc, I(Nvar))
+    rows, cols, vals = LocalizationMatrix2D(mesh, local_radius, kernel, isperiodic)
+    loc = sparse(rows, cols, vals)
+    dropzeros!(loc)
+    if isperiodic
+        loc_map = LinearMap(loc, issymmetric=true)
+    else
+        N_cells = get_square_mesh_N_cells(mesh)
+        polydeg_p = Int(sqrt(size(loc, 1)) ÷ N_cells)^2
+        loc_small = collect(loc[1:N_cells*N_cells, 1:N_cells*N_cells])
+        main_block = block_toeplitz_tridiag(loc_small[1:end÷2, 1:end÷2], polydeg_p)
+        upper_block = block_toeplitz_tridiag(loc_small[1:end÷2, (end÷2+1):end], polydeg_p)
+        lower_block = block_toeplitz_tridiag(loc_small[(end÷2+1):end, 1:end÷2], polydeg_p)
+        loc_small_map = [main_block upper_block; lower_block main_block]
+        kron_I_size = size(loc, 1) ÷ (N_cells * N_cells)
+        select_kron = IdentityMap(kron_I_size)
+        loc_map = LinearMap(kron(select_kron, loc_small_map), issymmetric=true)
+    end
+    select_kron = IdentityMap(Nvar)
+    loc_vars = Nvar == 1 ? loc_map : kron(loc_map, select_kron)
     return Localization(loc_vars)
 end
 
-function create_observation_indices(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
+# Metric should map (row_diff::Int, col_diff::Int) -> Float64
+# If you are comparing integer coords (5, 8) and (7, 2), then output should assume input (-2, 6)
+
+# function TransportBasedInference2.Localization(
+#     mesh::DGMultiMesh{2,Trixi.Affine},
+#     local_radius::Int;
+#     kernel::Function=(x, y) -> gaspari2D(x, y, local_radius),
+#     isperiodic=true,
+#     Nvar::Int=1
+# )
+#     rows, cols, vals = LocalizationMatrix2D(mesh, local_radius, kernel, isperiodic)
+#     loc = sparse(rows, cols, vals)
+#     dropzeros!(loc)
+#     if isperiodic
+#         loc_map = LinearMap(loc, issymmetric=true)
+#     else
+#         N_cells = get_square_mesh_N_cells(mesh)
+#         loc_small = collect(loc[1:N_cells*N_cells, 1:N_cells*N_cells])
+#         loc_small_map = LinearMap(loc_small, issymmetric=true)
+#         kron_I_size = size(loc, 1) ÷ (N_cells * N_cells)
+#         select_kron = IdentityMap(kron_I_size)
+#         loc_map = kron(select_kron, loc_small_map)
+#     end
+#     select_kron = IdentityMap(Nvar)
+#     loc_vars = Nvar == 1 ? loc : kron(loc_map, select_kron)
+#     return Localization(loc_vars)
+# end
+
+function create_observation_operator(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
     @assert offset < spacing
     N_cells = get_square_mesh_N_cells(mesh)
     (; yq, mapM) = mesh.md
@@ -169,14 +224,14 @@ function create_observation_indices(mesh::DGMultiMesh{2}, spacing::Int, offset::
             obs_idx += 1
         end
     end
-    obs_mat = sparse(1:num_obs, obs_indices, ones(num_obs), num_obs, length(mapM_reshape))
-    return LinearMap(obs_mat)
+    return SelectionMap(obs_indices, :out; in_size=length(mapM_reshape))
 end
 
-function create_observation_indices(mesh::DGMultiMesh{2}, spacing::Int; offset::Int=1, Nvar::Int=1, which_var::AbstractVector=1:Nvar)
-    base_H = create_observation_indices(mesh, spacing, offset)
+function create_observation_operator(mesh::DGMultiMesh{2}, spacing::Int; offset::Int=1, Nvar::Int=1, which_var::AbstractVector=1:Nvar)
+    base_H = create_observation_operator(mesh, spacing, offset)
     Nvar == 1 && return base_H
-    select_kron = which_var == 1:Nvar ? I(Nvar) : I(Nvar)[which_var, :]
+    select_kron = IdentityMap(Nvar)
+    which_var == 1:Nvar || (select_kron = select_kron[which_var, :])
     return kron(base_H, select_kron)
 end
 

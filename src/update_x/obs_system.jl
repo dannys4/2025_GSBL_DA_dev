@@ -1,9 +1,10 @@
 export ObsSystem
 
-import Base: *, size, Matrix
+using Base: *, size, Matrix
+using LinearMaps: _unsafe_mul!, MulStyle, issymmetric, ishermitian
 import LinearAlgebra: mul!
 
-mutable struct ObsSystem{M,W}
+mutable struct ObsSystem{M,W} <: LinearMaps.LinearMap{Float64}
     const Nx::Int64
     const Ny::Int64
     const H::LinearMap
@@ -13,6 +14,10 @@ mutable struct ObsSystem{M,W}
     # Workspaces for iterative scheme
     workspace::W
 end
+
+LinearMaps.MulStyle(::ObsSystem) = FiveArg()
+LinearMaps.issymmetric(::ObsSystem) = true
+LinearMaps.ishermitian(::ObsSystem) = true
 
 function ObsSystem(H::LinearMap, Cϵ::LinearMap, CX::T=Matrix{Float64}(undef, 0, 0); use_workspace=false, sparse_pattern=nothing) where {T}
     Ny, Nx = size(H)
@@ -25,7 +30,19 @@ function ObsSystem(H::LinearMap, Cϵ::LinearMap, CX::T=Matrix{Float64}(undef, 0,
     return ObsSystem{T,typeof(workspace)}(Nx, Ny, H, Cϵ, CX, workspace)
 end
 
-size(sys::ObsSystem) = (sys.Ny, sys.Ny)
+# function modify_CX!(sys::ObsSystem{M}, CX::M) where {M}
+#     sys.CX = CX
+# end
+
+# function modify_CX!(sys::LinearMap, CX)
+
+# end
+
+function Base.show(io::IO, sys::ObsSystem)
+    print(io, "Observation system of size $(sys.Ny)")
+end
+
+Base.size(sys::ObsSystem) = (sys.Ny, sys.Ny)
 
 
 function Base.Matrix(sys::ObsSystem)
@@ -39,8 +56,7 @@ function Base.Matrix(sys::ObsSystem)
 end
 
 
-function mul!(output::AbstractVector{Float64}, sys::ObsSystem, input::AbstractVector{Float64}, alpha, beta)
-
+function LinearMaps._unsafe_mul!(output, sys::ObsSystem, input, alpha, beta)
     @unpack Nx, Ny, H, Cϵ, CX, workspace = sys
     @unpack CX_H_T_X, H_T_X = workspace
 
@@ -52,10 +68,13 @@ function mul!(output::AbstractVector{Float64}, sys::ObsSystem, input::AbstractVe
     return output
 end
 
-mul!(output, sys::ObsSystem, input) = mul!(output, sys, input, true, false)
+# mul!(output, sys::ObsSystem, input) = mul!(output, sys, input, true, false)
 
-function (*)(sys::ObsSystem, input::Vector{Float64})
-    output = similar(input)
-    mul!(output, sys, input)
-    return output
-end
+# function (*)(sys::ObsSystem, input::Vector{Float64})
+#     output = similar(input)
+#     mul!(output, sys, input)
+#     return output
+# end
+
+# (sys::ObsSystem)(output, input) = mul!(output, sys, input, true, false)
+# (sys::ObsSystem)(output, input, alpha, beta) = mul!(output, sys, input, alpha, beta)

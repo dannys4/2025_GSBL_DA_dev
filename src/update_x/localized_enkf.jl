@@ -100,17 +100,12 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t,
     end
 
     # Only form covariance mat iff enkf is not iterative
-    ĈX = getĈX(enkf, X_forecast, Nx, Ny; with_matrix=!enkf.isiterative)
+    workspace_sparsity = findall(!iszero, enkf.sys.H' * fill(true, 4096))
+    ĈX = getĈX(enkf, X_forecast, Nx, Ny; with_matrix=!enkf.isiterative, workspace_sparsity)
 
     if enkf.isiterative
-        enkf.sys.CX = ĈX
-
-        sys_op = LinearMap{Float64}(
-            (y, x) -> mul!(y, enkf.sys, x),
-            Ny;
-            issymmetric=true,
-            isposdef=false,
-        )
+        # Creates linear map object
+        sys_op = enkf.sys.H * ĈX * enkf.sys.H' + enkf.sys.Cϵ
     else
         # Update covariance matrix
         enkf.sys.CX = ĈX.CXloc
@@ -118,7 +113,7 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t,
         # @show cond(sys_mat)
         sys_mat = bunchkaufman!(Matrix(enkf.sys))
     end
-
+    @info "Made sys op."
 
     # Compute Kalman-update in a matrix-free way
 
@@ -126,21 +121,21 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t,
     iterative_RHS = enkf.isiterative ? similar(ystar) : nothing
     δi = zeros(Nx)
 
-    for i = 1:3
+    @time for i = 1:1
         @info "" i
         err_i = @view errs[:, i]
         xi = @view X_analysis[:, i]
 
         # yi .= enkf.sys.H * xi + E[:, i] - ystar
         mul!(err_i, enkf.sys.H, xi, true, true)
-        @info "Calc yi."
+        @info "Calc'ed yi."
         # @assert isapprox(yi, enkf.sys.H * xi, atol=1e-8)
 
 
         if enkf.isiterative
             # Invert sys_op
             copy!(iterative_RHS, err_i)
-            cg!(err_i, sys_op, iterative_RHS; log=false, verbose=true, reltol=1e-2)
+            cg!(err_i, sys_op, iterative_RHS; log=false, verbose=true, reltol=1e-6)
         else
             # yi .= sys_mat \ yi
             ldiv!(sys_mat, yi)
@@ -149,7 +144,7 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t,
 
         # δi .= enkf.sys.H' * yi
         mul!(δi, enkf.sys.H', err_i)
-        @info "finished δi"
+        @info "finished δi."
 
         # xi .-= ĈX * δi
         mul!(xi, ĈX, δi, true, -1)
@@ -164,4 +159,4 @@ function (enkf::LocEnKF)(X, ystar::AbstractVector{Float64}, t::Float64)
     return X
 end
 
-getĈX(enkf::LocEnKF, X, Nx, Ny; with_matrix=true) = LocalizedEmpiricalCov(X, enkf.Loc; with_matrix)
+getĈX(enkf::LocEnKF, X, Nx, Ny; with_matrix=true, workspace_sparsity=nothing) = LocalizedEmpiricalCov(X, enkf.Loc; with_matrix, workspace_sparsity)

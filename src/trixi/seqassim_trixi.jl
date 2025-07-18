@@ -19,6 +19,7 @@ function seqassim_trixi(
     sys::TrixiSystem;
     ode_solver=SSPRK43(),
     cfl=0.2,
+    store_state_path=nothing,
     ode_kwargs...
 )
     Ne = size(X, 2)
@@ -70,13 +71,17 @@ function seqassim_trixi(
                 statei .= algo.G(statei)
             end
         end
-
-        push!(statehist, copy(X))
+        if isnothing(store_state_path)
+            push!(statehist, copy(X))
+        else
+            @save joinpath(store_state_path, "ens0_$(now()).jld2") X
+        end
 
         if algo isa HierarchicalSeqFilter
             push!(θhist, copy(θ))
         end
     end
+    output_func = (sol, i) -> (sol[end], false)
     # Run filtering algorithm
     J > 0 && @showprogress "Filtering using $(typeof(algo))..." for i = 1:length(Acycle)
 
@@ -90,11 +95,7 @@ function seqassim_trixi(
             remake(prob, u0=x_itp, tspan=tspan)
         end
 
-        ensemble_prob = EnsembleProblem(
-            prob,
-            output_func=(sol, i) -> (sol[end], false),
-            prob_func=prob_func,
-        )
+        ensemble_prob = EnsembleProblem(prob; output_func, prob_func=prob_func)
 
         sim = solve(
             ensemble_prob,
@@ -138,7 +139,11 @@ function seqassim_trixi(
             end
         end
 
-        push!(statehist, copy(X))
+        if isnothing(store_state_path)
+            push!(statehist, copy(X))
+        else
+            @save joinpath(store_state_path, "ens$(i)_$(now()).jld2") X
+        end
 
         if algo isa HierarchicalSeqFilter
             push!(θhist, copy(θ))

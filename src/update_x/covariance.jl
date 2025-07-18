@@ -1,5 +1,12 @@
 export EmpiricalCov, LocalizedEmpiricalCov
-abstract type AbstractEmpiricalCov end
+using LinearMaps: _unsafe_mul!, MulStyle, issymmetric, ishermitian
+using Base: size
+abstract type AbstractEmpiricalCov <: LinearMaps.LinearMap{Float64} end
+
+LinearMaps.issymmetric(::AbstractEmpiricalCov) = true
+LinearMaps.ishermitian(::AbstractEmpiricalCov) = true
+LinearMaps.MulStyle(::AbstractEmpiricalCov) = LinearMaps.FiveArg()
+Base.size(C::AbstractEmpiricalCov) = (C.Nx, C.Nx)
 
 # In this script, we develop a matrix-free formulation for the action of an empirical covariance matrix on a state
 
@@ -27,7 +34,7 @@ function Base.Matrix(C::EmpiricalCov)
     return C.CX
 end
 
-function mul!(v::AbstractVector{Float64}, Ĉ::EmpiricalCov, u::AbstractVector{Float64})
+function LinearMaps._unsafe_mul!(v::AbstractVector{Float64}, Ĉ::EmpiricalCov, u::AbstractVector{Float64})
     @unpack Nx, Ne, X, μX, CX = Ĉ
     if isnothing(CX)
         fill!(v, zero(eltype(v)))
@@ -42,14 +49,8 @@ function mul!(v::AbstractVector{Float64}, Ĉ::EmpiricalCov, u::AbstractVector{F
     return v
 end
 
-function (*)(Ĉ::EmpiricalCov, u::AbstractVector{Float64})
-    v = similar(u)
-    mul!(v, Ĉ, u)
-    return v
-end
-
 struct LocalizedEmpiricalCov{
-    LT<:Localization,CT<:Union{Nothing,<:AbstractMatrix{Float64}},W
+    LT,CT<:Union{Nothing,<:AbstractMatrix{Float64}},W
 } <: AbstractEmpiricalCov
 
     Nx::Int64
@@ -62,7 +63,7 @@ struct LocalizedEmpiricalCov{
     workspace::W
 end
 
-function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix=true)
+function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix=true, workspace_sparsity=nothing)
     Nx, Ne = size(X)
     μX = vec(mean(X; dims=2))
     center_X = copy(X)
@@ -76,16 +77,18 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
         CX = center_X * center_X'
         CXloc = Loc.ρX .* CX
     else
-        workspace = (similar(μX), similar(μX))
+        X_mul_U = isnothing(workspace_sparsity) ? similar(μX) : sparsevec(workspace_sparsity, ones(length(workspace_sparsity)), length(μX))
+        Localize_Mul = similar(μX)
+        workspace = (; X_mul_U, Localize_Mul)
     end
 
     return LocalizedEmpiricalCov(Nx, Ne, center_X, μX, Loc, CX, CXloc, workspace)
 end
 
-function mul!(
-    v::AbstractVector{Float64},
+function cov_mul!(
+    v,
     Ĉ::LocalizedEmpiricalCov,
-    u::AbstractVector{Float64},
+    u,
     α, β
 )
 
@@ -99,8 +102,7 @@ function mul!(
             # If beta is not a bool, just straight-up multiply
             v .*= β
         end
-        tmp = Ĉ.workspace[1]
-        tmp_loc = Ĉ.workspace[2]
+        (; X_mul_U, Localize_Mul) = Ĉ.workspace
         # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf, slide 4
         # (A ⊙ ∑ u_j v_j^T) x = ∑ D_{u_j} A D_{v_j} x
         # = ∑ u_j ⊙ (A (v_j ⊙ x))
@@ -108,10 +110,14 @@ function mul!(
             xi = @view Ĉ.center_X[:, i]
             # Recall that xi is centered in constructor.
             # v .+= Diagonal(xi) * (Ĉ.Loc.ρX * (xi .* u))
-            @. tmp = xi * u
-            mul!(tmp_loc, Ĉ.Loc.ρX, tmp, α, false)
+            for (nz_ind, ind) in enumerate(X_mul_U.nzind)
+                X_mul_U.nzval[nz_ind] = xi[ind] * u[ind]
+            end
+            # @info "" Ĉ.Loc.ρX
+            # @info "" X_mul_U
+            mul!(Localize_Mul, Ĉ.Loc.ρX, X_mul_U, α, false)
             for state_idx in eachindex(v)
-                v[state_idx] = muladd(xi[state_idx], tmp_loc[state_idx], v[state_idx])
+                v[state_idx] = muladd(xi[state_idx], Localize_Mul[state_idx], v[state_idx])
             end
             # @show "we haven't applied localization yet, more a placeholder for now"
         end
@@ -122,13 +128,30 @@ function mul!(
     return v
 end
 
-mul!(v, Ĉ::LocalizedEmpiricalCov, u) = mul!(v, Ĉ, u, true, false)
-
-function (*)(Ĉ::LocalizedEmpiricalCov, u::AbstractVector{Float64})
-    v = similar(u)
-    mul!(v, Ĉ, u)
-    return v
+function LinearMaps._unsafe_mul!(v::AbstractMatrix, Ĉ::LocalizedEmpiricalCov, u::AbstractMatrix, alpha, beta)
+    cov_mul!(v, Ĉ, u, alpha, beta)
 end
+
+function LinearMaps._unsafe_mul!(v::AbstractMatrix, Ĉ::LocalizedEmpiricalCov, u::AbstractMatrix)
+    cov_mul!(v, Ĉ, u, true, false)
+end
+
+function LinearMaps._unsafe_mul!(v::AbstractVector, Ĉ::LocalizedEmpiricalCov, u::AbstractVector, alpha, beta)
+    cov_mul!(v, Ĉ, u, alpha, beta)
+end
+
+function LinearMaps._unsafe_mul!(v::AbstractVector, Ĉ::LocalizedEmpiricalCov, u::AbstractVector)
+    cov_mul!(v, Ĉ, u, true, false)
+end
+
+# mul!(v, Ĉ::LocalizedEmpiricalCov, u) = mul!(v, Ĉ, u, true, false)
+# (Ĉ::LocalizedEmpiricalCov)(v, u) = mul!(v, Ĉ, u)
+
+# function (*)(Ĉ::LocalizedEmpiricalCov, u::AbstractVector{Float64})
+#     v = similar(u)
+#     mul!(v, Ĉ, u)
+#     return v
+# end
 
 function Base.Matrix(C::LocalizedEmpiricalCov)
     return C.CXloc
