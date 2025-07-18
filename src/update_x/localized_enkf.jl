@@ -121,7 +121,7 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t,
     iterative_RHS = enkf.isiterative ? similar(ystar) : nothing
     δi = zeros(Nx)
 
-    @time for i = 1:1
+    @time for i = 1:Ne
         @info "" i
         err_i = @view errs[:, i]
         xi = @view X_analysis[:, i]
