@@ -74,7 +74,7 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
     workspace = nothing
 
     if with_matrix
-        CX = center_X * center_X'
+        CX = (center_X * center_X')/(Ne - 1)
         CXloc = Loc.ρX .* CX
     else
         X_mul_U = isnothing(workspace_sparsity) ? similar(μX) : sparsevec(workspace_sparsity, ones(length(workspace_sparsity)), length(μX))
@@ -106,15 +106,14 @@ function cov_mul!(
         # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf, slide 4
         # (A ⊙ ∑ u_j v_j^T) x = ∑ D_{u_j} A D_{v_j} x
         # = ∑ u_j ⊙ (A (v_j ⊙ x))
+        X_mul_U = similar(u)
         for i = 1:Ĉ.Ne
             xi = @view Ĉ.center_X[:, i]
             # Recall that xi is centered in constructor.
             # v .+= Diagonal(xi) * (Ĉ.Loc.ρX * (xi .* u))
-            for (nz_ind, ind) in enumerate(X_mul_U.nzind)
-                X_mul_U.nzval[nz_ind] = xi[ind] * u[ind]
+            for ind in eachindex(u)
+                X_mul_U[ind] = xi[ind] * u[ind]
             end
-            # @info "" Ĉ.Loc.ρX
-            # @info "" X_mul_U
             mul!(Localize_Mul, Ĉ.Loc.ρX, X_mul_U, α, false)
             for state_idx in eachindex(v)
                 v[state_idx] = muladd(xi[state_idx], Localize_Mul[state_idx], v[state_idx])

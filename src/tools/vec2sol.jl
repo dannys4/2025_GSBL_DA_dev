@@ -36,7 +36,7 @@ function sol2vec!(
     N_nodes_total = length(x_sol) ÷ Nvar
 
     for i in 1:N_nodes_total
-        xi = @view x_sol[((i-1)*Nvar+1):i*Nvar]
+        xi = x_sol[i]
         x̃i = g(xi, equations)
         for k = 1:Nvar
             x_vec[(k-1)*Nvar+i] = x̃i[k]
@@ -103,9 +103,7 @@ function vec2sol!(
             tmp_vec[k] = x_vec[(k-1)*N_nodes_total+i]
         end
         tmp_out = g(SVector{Nvar}(tmp_vec), equations)
-        for k in 1:Nvar
-            x_sol[(i-1)*Nvar+k] = tmp_out[k]
-        end
+        x_sol[i] = tmp_out
     end
 end
 

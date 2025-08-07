@@ -20,6 +20,7 @@ function seqassim_trixi(
     ode_solver=SSPRK43(),
     cfl=0.2,
     store_state_path=nothing,
+    verbose=false,
     ode_kwargs...
 )
     Ne = size(X, 2)
@@ -89,7 +90,7 @@ function seqassim_trixi(
         tspan = (t0 + (i - 1) * Δtobs, t0 + i * Δtobs)
         function prob_func(prob, j, repeat)
             # At this point, the vector x is provided at the Gauss-Legendre nodes
-            vec2sol!(x_quad, @view(X[:, j]), sys.equations)
+            vec2sol!(vec(x_quad), @view(X[:, j]), sys.equations)
             # We need to move them to the Lobatto-Legendre nodes
             get_interp_node_vals!(sys.dg, x_quad, x_itp)
             remake(prob, u0=x_itp, tspan=tspan)
@@ -112,7 +113,7 @@ function seqassim_trixi(
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
             get_quadrature_node_vals!(sys.dg, x_quad, sim[i])
-            sol2vec!(@view(X[:, i]), x_quad, sys.equations; g=cons2prim)
+            sol2vec!(@view(X[:, i]), vec(x_quad), sys.equations; g=cons2prim)
         end
 
         # Assimilation # Get real measurement # Fix this later # Things are shifted in data.yt
@@ -126,9 +127,9 @@ function seqassim_trixi(
         # Generate posterior samples.
         # Note that the additive inflation of the observation is applied within the sequential filter.
         if algo isa HierarchicalSeqFilter
-            X, θ = algo(X, ystar, i * algo.Δtobs)
+            X, θ = algo(X, ystar, i * algo.Δtobs, verbose)
         else
-            X = algo(X, ystar, i * algo.Δtobs)
+            X = algo(X, ystar, i * algo.Δtobs, verbose)
         end
 
         # Filter state
