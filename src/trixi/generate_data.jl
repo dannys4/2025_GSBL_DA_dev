@@ -47,7 +47,7 @@ function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem; ode_s
         tspan = (t0 + (i - 1) * model.Δtobs, t0 + i * model.Δtobs)
 
         # At this point, the vector x is provided at the Gauss-Legendre nodes
-        vec2sol!(vec(x_quad), x, sys.equations; g=prim2cons)
+        vec2sol!(x_quad, x, sys.equations; g=prim2cons)
         # x_quad exists on quadrature nodes. Move to itp points
         get_interp_node_vals!(sys.dg, x_quad, x_itp)
 
@@ -66,7 +66,7 @@ function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem; ode_s
 
         # Interpolate the solution from the solver back to the quadrature nodes and reshaping
         get_quadrature_node_vals!(sys.dg, x_quad, sol.u[end])
-        sol2vec!(x, vec(x_quad), sys.equations; g=cons2prim)
+        sol2vec!(x, x_quad, sys.equations; g=cons2prim)
 
         model.ϵx(x)
 

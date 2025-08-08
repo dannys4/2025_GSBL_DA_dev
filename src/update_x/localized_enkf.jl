@@ -138,7 +138,7 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t,
             # Invert sys_op
             copy!(iterative_RHS, err_i)
             fill!(err_i, zero(eltype(err_i)))
-            cg!(err_i, sys_op, iterative_RHS; log=false, verbose=true, reltol=1e-11)
+            cg!(err_i, sys_op, iterative_RHS; log=false, verbose=false, reltol=1e-11)
         else
             # yi .= sys_mat \ yi
             ldiv!(sys_mat, err_i)
