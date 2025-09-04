@@ -11,25 +11,6 @@ export initial_condition_kpp, setup_kpp
 
 struct KPPEquation2D <: Trixi.AbstractEquations{2,1} end
 
-# The KPP flux is F(u) = (sin(u), cos(u))
-@inbounds @inline function Trixi.flux(u, orientation::Integer, ::KPPEquation2D)
-    if orientation == 1
-        return SVector(sin(u[1]))
-    else
-        return SVector(cos(u[1]))
-    end
-end
-
-###############################################################################
-# Definition of the 2D scalar "KPP equations"
-#
-# See: Kurganov, A., Petrova, G., and Popov, B. (2007).
-# Adaptive Semidiscrete Central-Upwind Schemes for Nonconvex Hyperbolic Conservation Laws,
-# SIAM Journal on Scientific Computing, 29(6), 2381--2401
-# DOI: https://doi.org/10.1137/040614189
-
-struct KPPEquation2D <: Trixi.AbstractEquations{2,1} end
-
 
 # The KPP flux is F(u) = (sin(u), cos(u))
 @inline function Trixi.flux(u, orientation::Integer, ::KPPEquation2D)

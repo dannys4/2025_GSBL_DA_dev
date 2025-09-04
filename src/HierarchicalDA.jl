@@ -72,14 +72,11 @@ include("trixi/trixi_system.jl")
 include("trixi/generate_data.jl")
 include("trixi/seqassim_trixi.jl")
 
-# Linear advection
-include("linear_advection/linear_advection.jl")
 
-# Inviscid Burgers
-include("inviscid_burgers/inviscid_burgers.jl")
-
-# Shu-Osher equation
-include("euler/euler.jl")
-include("euler/seqassim_trixi_euler.jl")
+# Add equation systems
+include("equations/linear_advection.jl") # Linear advection
+include("equations/inviscid_burgers.jl") # Inviscid Burgers
+include("equations/euler.jl") # Shu-Osher equation
+include("equations/kpp.jl") # KPP equation
 
 end # module HierarchicalDA
