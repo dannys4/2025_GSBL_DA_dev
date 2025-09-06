@@ -22,18 +22,18 @@ struct KPPEquation2D <: Trixi.AbstractEquations{2,1} end
 end
 
 # Since the KPP problem is a scalar equations, the entropy-conservative flux is uniquely determined
-@inline function Trixi.flux_ec(u_ll, u_rr, orientation::Integer, ::KPPEquation2D)
+@inline function Trixi.flux_ec(u_ll::StaticVector{1,RealT}, u_rr::StaticVector{1,RealT}, orientation::Integer, ::KPPEquation2D) where {RealT}
     # The tolerance of 1e-12 is based on experience and somewhat arbitrarily chosen
-    RealT = eltype(u_ll)
-    if abs(u_ll[1] - u_rr[1]) < RealT(1e-12)
+    u_ll, u_rr = u_ll[], u_rr[]
+    if abs(u_ll - u_rr) < RealT(1e-12)
         return 0.5f0 * (flux(u_ll, orientation, KPPEquation2D()) +
                         flux(u_rr, orientation, KPPEquation2D()))
     else
-        factor = 1 / (u_rr[1] - u_ll[1])
+        factor = 1 / (u_rr - u_ll)
         if orientation == 1
-            return SVector(factor * (-cos(u_rr[1]) + cos(u_ll[1])))
+            return SVector(factor * (-cos(u_rr) + cos(u_ll)))
         else
-            return SVector(factor * (sin(u_rr[1]) - sin(u_ll[1])))
+            return SVector(factor * (sin(u_rr) - sin(u_ll)))
         end
     end
 end
@@ -71,6 +71,7 @@ end
 # Convert between conservative, primitive, and entropy variables. The conserved quantity "u" is also
 # considered the "primitive variable". Since we use the square entropy, "u" is also the entropy
 # variable.
+@inline Trixi.prim2cons(u, ::KPPEquation2D) = u
 @inline Trixi.cons2prim(u, ::KPPEquation2D) = u
 @inline Trixi.cons2entropy(u, ::KPPEquation2D) = u
 @inline Trixi.entropy2cons(u, ::KPPEquation2D) = u

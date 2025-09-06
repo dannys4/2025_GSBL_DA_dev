@@ -67,14 +67,3 @@ function LinearMaps._unsafe_mul!(output, sys::ObsSystem, input, alpha, beta)
     mul!(output, H, CX_H_T_X, alpha, true)
     return output
 end
-
-# mul!(output, sys::ObsSystem, input) = mul!(output, sys, input, true, false)
-
-# function (*)(sys::ObsSystem, input::Vector{Float64})
-#     output = similar(input)
-#     mul!(output, sys, input)
-#     return output
-# end
-
-# (sys::ObsSystem)(output, input) = mul!(output, sys, input, true, false)
-# (sys::ObsSystem)(output, input, alpha, beta) = mul!(output, sys, input, alpha, beta)

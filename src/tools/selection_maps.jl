@@ -1,11 +1,12 @@
 using Base: size, getindex
-using LinearMaps: _unsafe_mul!, MulStyle
+using LinearMaps: _unsafe_mul!, MulStyle, FiveArg
+export IdentityMap, SelectionMap, ZeroMap, diag_select
 
 struct IdentityMap{T} <: LinearMap{T}
     side_len::Int
-    function IdentityMap(side_len::Int, _::Type{_T}=Float64) where {_T}
-        new{_T}(side_len)
-    end
+end
+function IdentityMap(side_len::Int, _::Type{T}=Float64) where {T}
+    IdentityMap{T}(side_len)
 end
 LinearMaps.issymmetric(::IdentityMap) = true
 LinearMaps.MulStyle(::IdentityMap) = FiveArg()
@@ -31,6 +32,34 @@ LinearMaps._unsafe_mul!(y::AbstractVector, H::IdentityMap, x::AbstractVector) = 
 
 LinearMaps._unsafe_mul!(y::AbstractMatrix, H::IdentityMap, x::AbstractMatrix, alpha, beta) = identity_mul!(y, H, x, alpha, beta)
 LinearMaps._unsafe_mul!(y::AbstractVector, H::IdentityMap, x::AbstractVector, alpha, beta) = identity_mul!(y, H, x, alpha, beta)
+
+struct ZeroMap{T} <: LinearMap{T}
+    size::Tuple{Int,Int}
+end
+function ZeroMap(rows::Int, cols::Int, _::Type{T}=Float64) where {T}
+    ZeroMap{T}((rows, cols))
+end
+LinearMaps.issymmetric(z::ZeroMap) = z.size[1] == z.size[2]
+LinearMaps.MulStyle(::ZeroMap) = FiveArg()
+Base.size(z::ZeroMap) = z.size
+function Base.eltype(::ZeroMap{T}) where {T}
+    T
+end
+LinearAlgebra.adjoint(z::ZeroMap{T}) where {T} = ZeroMap{T}((z.size[2], z.size[1]))
+LinearAlgebra.transpose(z::ZeroMap) = adjoint(z)
+
+function zero_mul!(y, beta)
+    if iszero(beta)
+        fill!(y, zero(eltype(y)))
+    else
+        lmul!(beta, y)
+    end
+    y
+end
+# LinearMaps._unsafe_mul!(y, ::ZeroMap, _) = zero_mul!(y, false)
+LinearMaps._unsafe_mul!(y::AbstractVector{T}, ::ZeroMap{T}, x::AbstractVector{T}, alpha=true, beta=false) where {T} = zero_mul!(y, beta)
+LinearMaps._unsafe_mul!(y::AbstractMatrix{T}, ::ZeroMap{T}, x::AbstractMatrix{T}, alpha=true, beta=false) where {T} = zero_mul!(y, beta)
+# LinearMaps._unsafe_mul!(y::MV, ::ZeroMap{T}, ::MV, alpha=true, beta=false) where {T,MV<:AbstractMatrix{T}} = zero_mul!(y, beta)
 
 
 
@@ -95,13 +124,16 @@ function select_mul!(y, H::SelectionMap{IsOut}, x, alpha, beta) where {IsOut}
     return y
 end
 
+isout_container(x, T, axis) = similar(x, T, axis)
+isout_container(::SparseVector{T}, ::Type{T}, axis) where {T} = Vector{T}(undef, axis.stop)
+
 function Base.:(*)(A::SelectionMap{IsOut}, x::AbstractVector) where {IsOut}
-    check_dim_mul(A, x)
+    LinearMaps.check_dim_mul(A, x)
     T = promote_type(eltype(A), eltype(x))
     if IsOut
-        y = similar(x, T, axes(A)[1])
+        y = isout_container(x, T, axes(A)[1])
     else
-        y = sparsevec(A.idxs, ones(T, length(A.idxs)))
+        y = sparsevec(A.idxs, ones(T, length(A.idxs)), A.size[1])
     end
     return @inbounds mul!(y, A, x)
 end
@@ -119,3 +151,19 @@ function LinearAlgebra.adjoint(H::SelectionMap{IsOut,T,V}) where {IsOut,T,V}
 end
 
 LinearAlgebra.transpose(H::SelectionMap) = adjoint(H)
+
+function diag_select(diag_idx, num_cols, _::Type{T}=Float64) where {T}
+    id_size = num_cols - abs(diag_idx)
+    id = IdentityMap(id_size, T)
+    corner_sz = abs(diag_idx)
+    corner_pad = ZeroMap(corner_sz, corner_sz, T)
+    col_pad = ZeroMap(num_cols - corner_sz, corner_sz, T)
+    row_pad = ZeroMap(corner_sz, num_cols - corner_sz, T)
+    if diag_idx > 0
+        return [col_pad id; corner_pad row_pad]
+    elseif diag_idx < 0
+        return [row_pad corner_pad; id col_pad]
+    else
+        return id
+    end
+end

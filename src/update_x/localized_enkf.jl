@@ -149,8 +149,8 @@ function update_x!(enkf::LocEnKF, X_forecast, ystar::AbstractVector{Float64}, t,
         mul!(δi, enkf.sys.H', err_i)
         verbose && @info "finished δi."
 
-        xi .+= ĈX * δi
-        # mul!(xi, ĈX, δi, true, -1)
+        # xi .+= ĈX * δi
+        mul!(xi, ĈX, δi, true, true)
     end
     time_elapsed = (Base.time_ns() - time_start) / 1.0e9
     verbose && @info "Took $(time_elapsed)s"

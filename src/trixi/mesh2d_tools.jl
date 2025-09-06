@@ -1,5 +1,7 @@
-export VerticalPolyAnnil2D, create_observation_operator
+export VerticalPolyAnnil2D, create_observation_operator2d, sample_initial_state2d
+
 using TransportBasedInference2: Localization
+
 # Because this uses intrinsic types from StartupDG, we keep this in the trixi subdir
 function get_vertical_slice_elements(slice_idx, polydeg, N_cells)
     # Which element in a given horizontal set of elements is this in
@@ -41,7 +43,8 @@ function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int)
     all_y_quad = yq[nn, vv]
     vec_quad = all_y_quad[:]
     PA_local = PolyAnnil(vec_quad, PA_order).P
-    num_nodes = length(mesh.md.mapM)
+    node_indices = LinearIndices(yq)
+    num_nodes = length(yq)
     # Now create the global polynomial annihilator
     PA_global = spzeros(num_nodes, num_nodes)
     # There are polydeg+1 slices per element and N_cells elements per side
@@ -50,14 +53,14 @@ function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int)
         nn = get_vertical_slice_nodes(slice_idx, polydeg)
         # node_idxs are equiv to reduce(vcat, nn .+ (j-1)*N_cells*(polydeg+1)*(polydeg+1) for j in 1:N_cells)
         # Gets the indices of the nodes corresponding to this PA operator
-        node_idxs = vec(mesh.md.mapM[nn, vv])
+        node_idxs = vec(node_indices[nn, vv])
         PA_global[node_idxs, node_idxs] = PA_local
     end
     # PolyAnnil(vec_quad, PA_order, )
     PA_global, vec_quad
 end
 
-function VerticalPolyAnnil2D(mesh, PA_order, Nvar=1)
+function VerticalPolyAnnil2D(mesh::DGMultiMesh, PA_order, Nvar=1)
     base_PA, vec_quad = __VerticalPolyAnnil2D(mesh, PA_order)
     select_kron = IdentityMap(Nvar)
     full_PA = Nvar == 1 ? base_PA : kron(base_PA, select_kron)
@@ -72,7 +75,9 @@ function VerticalPolyAnnil2D(mesh, PA_order, Nvar=1)
     PolyAnnil(vec_quad, PA_order, sparse(full_PA))
 end
 
-gaspari2D(offset_x, offset_y, radius) = gaspari((abs2(offset_x) + abs2(offset_y)) / radius)
+VerticalPolyAnnil2D(sys::TrixiSystem, PA_order, Nvar=1) = VerticalPolyAnnil2D(sys.mesh, PA_order, Nvar)
+
+gaspari2D(offset_x, offset_y, radius) = gaspari(2 * sqrt(abs2(offset_x) + abs2(offset_y)) / radius)
 
 function LocalizationMatrix2D(
     mesh::DGMultiMesh{2,Trixi.Affine},
@@ -81,16 +86,15 @@ function LocalizationMatrix2D(
     isperiodic::Bool)
 
     N_cells = get_square_mesh_N_cells(mesh)
-    (; yq, mapM) = mesh.md
+    yq = mesh.md.yq
     polydeg = Int(sqrt(size(yq, 1))) - 1
     # @assert local_radius <= polydeg + 1 "Currently only supports radius that is below polynomial degree. Got $local_radius > $(polydeg+1)"
-    mapM_reshape = reshape(mapM, polydeg + 1, polydeg + 1, N_cells, N_cells)
+    indices = reshape(LinearIndices(yq), polydeg + 1, polydeg + 1, N_cells, N_cells)
 
     # How many elements over the index is
     get_elem_offset(idx) = sign(idx - 1) * ((idx < 1) + (abs(idx) - (idx > polydeg)) ÷ (polydeg + 1))
-
     rows, cols, vals = Int[], Int[], Float64[]
-    for (node_matrix_row_idx, c_idx) in enumerate(CartesianIndices(mapM_reshape))
+    @showprogress for (node_matrix_row_idx, c_idx) in enumerate(CartesianIndices(indices))
         elem_row_idx, elem_col_idx, global_row_idx, global_col_idx = Tuple(c_idx)
         for location_offset in CartesianIndices((-local_radius:local_radius, -local_radius:local_radius))
             row_offset_rad, col_offset_rad = Tuple(location_offset)
@@ -112,7 +116,7 @@ function LocalizationMatrix2D(
             row_global_neigh = mod1(row_global_neigh, N_cells)
             col_global_neigh = mod1(col_global_neigh, N_cells)
             # Get the neighbor's node index in the global matrix
-            node_idx_neigh = mapM_reshape[row_elem_neigh, col_elem_neigh, row_global_neigh, col_global_neigh]
+            node_idx_neigh = indices[row_elem_neigh, col_elem_neigh, row_global_neigh, col_global_neigh]
             # Calculate the value for the localization
             val = kernel(row_offset_rad, col_offset_rad)
             push!(rows, node_matrix_row_idx)
@@ -170,6 +174,12 @@ function TransportBasedInference2.Localization(
     return Localization(loc_vars)
 end
 
+TransportBasedInference2.Localization(
+    sys::TrixiSystem,
+    local_radius::Int;
+    kwargs...
+) = Localization(sys.mesh, local_radius; kwargs...)
+
 # Metric should map (row_diff::Int, col_diff::Int) -> Float64
 # If you are comparing integer coords (5, 8) and (7, 2), then output should assume input (-2, 6)
 
@@ -198,14 +208,14 @@ end
 #     return Localization(loc_vars)
 # end
 
-function create_observation_operator(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
+function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
     @assert offset < spacing
     N_cells = get_square_mesh_N_cells(mesh)
-    (; yq, mapM) = mesh.md
+    yq = mesh.md.yq
     polydeg = Int(sqrt(size(yq, 1))) - 1
     # @assert spacing % (polydeg + 1) == 0
     # @assert local_radius <= polydeg + 1 "Currently only supports radius that is below polynomial degree. Got $local_radius > $(polydeg+1)"
-    mapM_reshape = reshape(mapM, polydeg + 1, polydeg + 1, N_cells, N_cells)
+    yq_reshape = reshape(yq, polydeg + 1, polydeg + 1, N_cells, N_cells)
 
     # How many elements over the index is
     get_elem_offset(idx) = sign(idx - 1) * ((idx < 1) + (abs(idx) - (idx > polydeg)) ÷ (polydeg + 1))
@@ -213,7 +223,7 @@ function create_observation_operator(mesh::DGMultiMesh{2}, spacing::Int, offset:
     num_obs = ceil(Int, N_cells * (polydeg + 1) / spacing)^2
     obs_indices = zeros(Int, num_obs)
     obs_idx = 1
-    for (node_matrix_idx, c_idx) in enumerate(CartesianIndices(mapM_reshape))
+    for (node_matrix_idx, c_idx) in enumerate(CartesianIndices(yq_reshape))
         elem_row_idx, elem_col_idx, global_row_idx, global_col_idx = Tuple(c_idx)
         row_idx = (global_row_idx - 1) * (polydeg + 1) + elem_row_idx
         col_idx = (global_col_idx - 1) * (polydeg + 1) + elem_col_idx
@@ -224,25 +234,28 @@ function create_observation_operator(mesh::DGMultiMesh{2}, spacing::Int, offset:
             obs_idx += 1
         end
     end
-    return SelectionMap(obs_indices, :out; in_size=length(mapM_reshape))
+    return SelectionMap(obs_indices, :out; in_size=length(yq_reshape))
 end
 
-function create_observation_operator(mesh::DGMultiMesh{2}, spacing::Int; offset::Int=1, Nvar::Int=1, which_var::AbstractVector=1:Nvar)
-    base_H = create_observation_operator(mesh, spacing, offset)
+function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int; offset::Int=1, Nvar::Int=1, which_var::AbstractVector=1:Nvar)
+    base_H = create_observation_operator2d(mesh, spacing, offset)
     Nvar == 1 && return base_H
     select_kron = IdentityMap(Nvar)
     which_var == 1:Nvar || (select_kron = select_kron[which_var, :])
     return kron(base_H, select_kron)
 end
 
-function sample_initial_state(f0_row, f0_col, mesh::DGMultiMesh{2}; Nvar=1, transform_fcn=ntuple(Returns(identity), Nvar), f0_scale=0.5)
+create_observation_operator2d(sys::TrixiSystem, spacing; kwargs...) = create_observation_operator2d(sys.mesh, spacing; kwargs...)
+
+function sample_initial_state2d(mesh::DGMultiMesh{2}, f0_row, f0_col; unique_digits=3, Nvar=1, transform_fcn=ntuple(Returns(identity), Nvar), f0_scale=0.5)
     @assert length(transform_fcn) == Nvar
     Nx_var = length(mesh.md.xq)
     x0_ens = Matrix{Float64}(undef, Nx_var, Nvar)
     # Crude way of getting one dimensional grid, need to round due to numerical issues.
-    grid1d = unique(x -> round(x, digits=5), mesh.md.xq)
-    Ncells_dim = Int(sqrt(length(mesh.md.VX)) - 1)
-    polydeg = Int((length(grid1d) / Ncells_dim) - 1)
+    Ncells_dim = Int(sqrt(mesh.md.num_elements))
+    polydeg = Int(sqrt(size(mesh.md.xq, 1)) - 1)
+    grid1d = unique(x -> round(x, digits=unique_digits), mesh.md.xq)
+    @assert length(grid1d) == Ncells_dim * (polydeg + 1) "Unexpected grid length: Got $(length(grid1d)), expected $(Ncells_dim * (polydeg + 1))"
     f0_row_eval = f0_row(grid1d)
     f0_col_eval = f0_col(grid1d)
     for which_var in 1:Nvar
@@ -260,5 +273,7 @@ function sample_initial_state(f0_row, f0_col, mesh::DGMultiMesh{2}; Nvar=1, tran
             var_ens[lin_idx] = fcn(f0_scale * (f0_row_eval[global_idx_row] + f0_col_eval[global_idx_col]))
         end
     end
-    return vec(x0_ens')
+    return vec(x0_ens)
 end
+
+sample_initial_state2d(sys::TrixiSystem, f0_row, f0_col; kwargs...) = sample_initial_state2d(sys.mesh, f0_row, f0_col; kwargs...)

@@ -74,7 +74,7 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
     workspace = nothing
 
     if with_matrix
-        CX = (center_X * center_X')/(Ne - 1)
+        CX = (center_X * center_X') / (Ne - 1)
         CXloc = Loc.ρX .* CX
     else
         X_mul_U = isnothing(workspace_sparsity) ? similar(μX) : sparsevec(workspace_sparsity, ones(length(workspace_sparsity)), length(μX))
@@ -91,7 +91,6 @@ function cov_mul!(
     u,
     α, β
 )
-
     if isnothing(Ĉ.CX)
         # @assert α && !β
         if β isa Bool
@@ -107,12 +106,16 @@ function cov_mul!(
         # (A ⊙ ∑ u_j v_j^T) x = ∑ D_{u_j} A D_{v_j} x
         # = ∑ u_j ⊙ (A (v_j ⊙ x))
         X_mul_U = similar(u)
-        for i = 1:Ĉ.Ne
+        @inbounds for i = 1:Ĉ.Ne
             xi = @view Ĉ.center_X[:, i]
             # Recall that xi is centered in constructor.
             # v .+= Diagonal(xi) * (Ĉ.Loc.ρX * (xi .* u))
-            for ind in eachindex(u)
-                X_mul_U[ind] = xi[ind] * u[ind]
+            if u isa SparseVector
+                for (u_idx, x_idx) in enumerate(u.nzind)
+                    X_mul_U.nzval[u_idx] = xi[x_idx] * u.nzval[u_idx]
+                end
+            else
+                X_mul_U .= xi .* u
             end
             mul!(Localize_Mul, Ĉ.Loc.ρX, X_mul_U, α, false)
             for state_idx in eachindex(v)
@@ -143,14 +146,17 @@ function LinearMaps._unsafe_mul!(v::AbstractVector, Ĉ::LocalizedEmpiricalCov, 
     cov_mul!(v, Ĉ, u, true, false)
 end
 
-# mul!(v, Ĉ::LocalizedEmpiricalCov, u) = mul!(v, Ĉ, u, true, false)
-# (Ĉ::LocalizedEmpiricalCov)(v, u) = mul!(v, Ĉ, u)
+function (*)(Ĉ::LocalizedEmpiricalCov, u::AbstractVector{Float64})
+    v = similar(u)
+    mul!(v, Ĉ, u)
+    return v
+end
 
-# function (*)(Ĉ::LocalizedEmpiricalCov, u::AbstractVector{Float64})
-#     v = similar(u)
-#     mul!(v, Ĉ, u)
-#     return v
-# end
+function (*)(Ĉ::LocalizedEmpiricalCov, u::SparseVector{Float64})
+    v = Vector{Float64}(undef, length(u))
+    mul!(v, Ĉ, u)
+    return v
+end
 
 function Base.Matrix(C::LocalizedEmpiricalCov)
     return C.CXloc
