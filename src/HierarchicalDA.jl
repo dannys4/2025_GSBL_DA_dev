@@ -66,7 +66,7 @@ include("update_x/update_x_hierarchical_enkf_separate.jl")
 include("update_x/update_x_hierarchical_enkf_shared.jl")
 
 # Setup object for Trixi
-include("trixi/dgmulti_zhangshu.jl")
+include("trixi/pos_preserving.jl")
 include("trixi/trixi_system.jl")
 include("trixi/mesh2d_tools.jl")
 include("trixi/generate_data.jl")
