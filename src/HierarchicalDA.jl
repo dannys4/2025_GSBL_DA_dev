@@ -36,7 +36,6 @@ include("tools/smooth_periodic.jl")
 include("tools/node_transfer.jl")
 include("tools/vec2sol.jl")
 include("tools/crps.jl")
-include("tools/dgmulti_zhangshu.jl")
 include("tools/selection_maps.jl")
 # include("tools/grid.jl")
 
@@ -67,6 +66,7 @@ include("update_x/update_x_hierarchical_enkf_separate.jl")
 include("update_x/update_x_hierarchical_enkf_shared.jl")
 
 # Setup object for Trixi
+include("trixi/dgmulti_zhangshu.jl")
 include("trixi/trixi_system.jl")
 include("trixi/mesh2d_tools.jl")
 include("trixi/generate_data.jl")
