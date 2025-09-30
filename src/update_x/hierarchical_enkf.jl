@@ -3,7 +3,7 @@ export HEnKF, update_x!
 """
 $(TYPEDEF)
 
-A structure for the variational formulation of the hierarchical 
+A structure for the variational formulation of the hierarchical
 stochastic ensemble Kalman filter (EnKF)
 
 References:
@@ -11,7 +11,7 @@ References:
 $(TYPEDFIELDS)
 """
 
-struct HEnKF <: HierarchicalSeqFilter
+struct HEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
     "Filter function"
     G::Function
 
@@ -25,7 +25,7 @@ struct HEnKF <: HierarchicalSeqFilter
     dist::GeneralizedGamma
 
     "Flow theta"
-    flow::FlowTheta
+    flow::ThetaT
 
     "Penalization coefficients θ associated with the regularization term"
     θ::Vector{Float64}
@@ -112,7 +112,7 @@ function HEnKF(
 
     flow = FlowTheta(dist; Ne=Ne)
 
-    
+
     isθshared = true # θ isa Vector{Float64} by method definition
     # useEnKIOpt && @assert isθshared "If state is stochastic, must have shared θ"
 
@@ -131,7 +131,7 @@ function HEnKF(
         Niter,
         rtolθ,
         useEnKIOpt,
-        )
+    )
 end
 
 function Base.show(io::IO, enkf::HEnKF)

@@ -63,11 +63,23 @@ struct LocalizedEmpiricalCov{
     workspace::W
 end
 
+function localization_elementwise_mul(A::SparseMatrixCSC, B::AbstractMatrix)
+    C = similar(A)
+    nonzero_idxs = findall(!iszero, A)
+    @inbounds for (sp_idx, c_idx) in enumerate(nonzero_idxs)
+        C.nzval[sp_idx] = A.nzval[sp_idx] * B[c_idx]
+    end
+    C
+end
+
+function localization_elementwise_mul(A::AbstractMatrix, B::AbstractMatrix)
+    A .* B
+end
+
 function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix=true, workspace_sparsity=nothing)
     Nx, Ne = size(X)
     μX = vec(mean(X; dims=2))
-    center_X = copy(X)
-    @. center_X = center_X - μX
+    center_X = X .- μX
 
     CX = nothing
     CXloc = nothing
@@ -75,7 +87,7 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
 
     if with_matrix
         CX = (center_X * center_X') / (Ne - 1)
-        CXloc = Loc.ρX .* CX
+        CXloc = localization_elementwise_mul(Loc.ρX, CX)
     else
         X_mul_U = isnothing(workspace_sparsity) ? similar(μX) : sparsevec(workspace_sparsity, ones(length(workspace_sparsity)), length(μX))
         Localize_Mul = similar(μX)

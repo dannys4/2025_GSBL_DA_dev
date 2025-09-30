@@ -3,11 +3,26 @@ export ObsConstraintSystem
 import Base: *, size, Matrix
 import LinearAlgebra: mul!
 
+struct ObsConstraintSysCache{MT}
+    C_YY::MT
+    C_YS::MT
+    C_SS::MT
+    function ObsConstraintSysCache(Ny, Nz)
+        cache_sys = zeros(Ny + Nz, Ny + Nz)
+        C_YY = @view cache_sys[1:Ny, 1:Ny]
+        C_YS = @view cache_sys[1:Ny, Ny+1:end]
+        C_SS = @view cache_sys[Ny+1:end, Ny+1:end]
+        new{typeof(C_YY)}(C_YY, C_YS, C_SS), cache_sys
+    end
+end
+
 # Covariance of (y,s) | x
 mutable struct ObsConstraintSystem{
     HT<:LinearMap,ST<:LinearMap,
     CθT<:LinearMap,CϵT<:LinearMap,
-    CacheT<:Union{Nothing,Matrix{Float64}}
+    MT<:AbstractMatrix,
+    CacheT<:Union{Nothing,ObsConstraintSysCache{MT}},
+    SysCacheT<:Union{Nothing,Matrix{Float64}}
 }
     const Nx::Int64
     const Ny::Int64
@@ -17,6 +32,7 @@ mutable struct ObsConstraintSystem{
     const Cθ::CθT
     const Cϵ::CϵT
     const cache_YS::CacheT
+    const cache_sys::SysCacheT
     # To update the covariance matrix for the state
     CX::Matrix{Float64}
 end
@@ -30,12 +46,10 @@ function ObsConstraintSystem(
 )
     Ny, Nx = size(H)
     Nz = size(S, 1)
-    cache_YS = cache ? zeros(Ny + Nz, Ny + Nz) : nothing
+    cache_YS, cache_sys = cache ? ObsConstraintSysCache(Ny, Nz) : (nothing, nothing)
 
-    # cache_xx = ArrayPartition(zeros(Nx), zeros(Nx))
-    # cache_ys = ArrayPartition(zeros(Ny), zeros(Nz))
     CX = Matrix{Float64}(undef, 0, 0)
-    return ObsConstraintSystem(Nx, Ny, Nz, H, S, Cθ, Cϵ, cache_YS, CX)
+    return ObsConstraintSystem(Nx, Ny, Nz, H, S, Cθ, Cϵ, cache_YS, cache_sys, CX)
 end
 
 size(sys::ObsConstraintSystem) = (sys.Ny + sys.Nz, sys.Ny + sys.Nz)
@@ -92,24 +106,34 @@ function (*)(sys::ObsConstraintSystem, input::ObsConstraintVector)
     return output
 end
 
+function initialize_sys_diag_block!(C::AbstractMatrix, Cϵ::LinearMaps.UniformScalingMap)
+    # C .= zero(eltype(C))
+    C[diagind(C)] .= Cϵ.λ
+end
+
+function initialize_sys_diag_block!(C_YY::AbstractMatrix, Cϵ::LinearMaps.WrappedMap)
+    copy!(C_YY, Cϵ.lmap)
+end
+
 function Base.Matrix(sys::ObsConstraintSystem)
     # Suppose we have [y, s]
     # Then we get sys =
     # [ Ce + H * CX * H' |   H * CX * S'    ]
     # [   S * CX * H'    | CT + S * CX * S' ]
-    @unpack Nx, Ny, Nz, H, S, Cθ, Cϵ, CX, cache_YS = sys
+    @unpack Nx, Ny, Nz, H, S, Cθ, Cϵ, CX, cache_sys, cache_YS = sys
     H_CX = H.lmap * CX
-    C_YY = @view cache_YS[1:Ny, 1:Ny]
-    C_YS = @view cache_YS[1:Ny, Ny+1:end]
-    C_SS = @view cache_YS[Ny+1:end, Ny+1:end]
+    (; C_YY, C_YS, C_SS) = cache_YS
+    fill!(cache_sys, zero(eltype(cache_sys)))
     # Off-diagonal
     mul!(C_YS, H_CX, S.lmap')
     # Diagonal
-    copy!(C_YY, Cϵ.lmap)
+    initialize_sys_diag_block!(C_YY, Cϵ)
     mul!(C_YY, H_CX, H.lmap', true, true)
-    copy!(C_SS, Cθ.lmap)
-    mul!(C_SS, S.lmap, Matrix(CX * S'))
-    return Hermitian(cache_YS, :U)
+
+    initialize_sys_diag_block!(C_SS, Cθ)
+    mul!(C_SS, S.lmap, Matrix(CX * S'), true, true)
+    # cache_sys shares memory with C_YY,C_YS,C_SS
+    return Hermitian(cache_sys, :U)
 end
 
 function mul!(output::AbstractVector{Float64}, sys::ObsConstraintSystem, input::AbstractVector{Float64})

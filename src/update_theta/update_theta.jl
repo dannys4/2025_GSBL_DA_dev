@@ -1,36 +1,24 @@
 export update_θ!
 
-function update_θ!(enkf, X, θ::Vector{Float64}, ystar, t)
-
-    Ny = size(ystar, 1)
-    Nx = size(X, 1) - Ny
-    Ne = size(X, 2)
-    Ns = size(θ, 1)
-    θ0 = copy(θ)
-
-    # Make sure that the flow is computed correctly
-
-    s = zeros(Ns)
+function update_θ!(enkf, X, θ::Vector{Float64}, ystar, t, verbose::Bool)
+    s = zero(θ)
     # We need to compute the sum of the square
-    #@assert max
-    for i = 1:Ne
-        s .+= (enkf.sys.S * X[Ny+1:Ny+Nx, i]) .^ 2
+    for i = axes(X, 2)
+        X_i = @view X[:, i]
+        s .+= (enkf.sys.S * X_i) .^ 2
     end
+    # s = vec(sum(abs2, enkf.sys.S * X, dims=1))
 
     # @show "Need to change the value for the initial condition"
 
-    for j = 1:Ns
+    for j = eachindex(θ, s)
         θ[j] = enkf.flow.ϑ * enkf.flow(√(s[j] / enkf.flow.ϑ))
     end
 end
 
-function update_θ!(enkf, X, θ::Matrix{Float64}, ystar, t)
-
-    Ny = size(ystar, 1)
-    Nx = size(X, 1) - Ny
+function update_θ!(enkf, X, θ::Matrix{Float64}, ystar, t, verbose::Bool)
     Ne = size(X, 2)
     Ns = size(θ, 1)
-    θ0 = copy(θ)
 
     # Make sure that the flow is computed correctly
 
@@ -38,7 +26,8 @@ function update_θ!(enkf, X, θ::Matrix{Float64}, ystar, t)
 
     # We need to compute the square of each component of S x
     for i = 1:Ne
-        s .= (enkf.sys.S * X[Ny+1:Ny+Nx, i]) .^ 2
+        X_i = @view X[:, i]
+        s .= (enkf.sys.S * X_i) .^ 2
         for j = 1:Ns
             θ[j, i] = enkf.flow.ϑ * enkf.flow(√(s[j] / enkf.flow.ϑ))
         end

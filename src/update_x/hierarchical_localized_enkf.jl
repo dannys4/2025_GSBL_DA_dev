@@ -3,7 +3,7 @@ export HLocEnKF, update_x!
 """
 $(TYPEDEF)
 
-A structure for the variational formulation of the hierarchical 
+A structure for the variational formulation of the hierarchical
 stochastic ensemble Kalman filter (EnKF)
 
 References:
@@ -11,7 +11,7 @@ References:
 $(TYPEDFIELDS)
 """
 
-struct HLocEnKF <: HierarchicalSeqFilter
+struct HLocEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
     "Filter function"
     G::Function
 
@@ -28,7 +28,7 @@ struct HLocEnKF <: HierarchicalSeqFilter
     dist::GeneralizedGamma
 
     "Flow theta"
-    flow::FlowTheta
+    flow::ThetaT
 
     "Penalization coefficients θ associated with the regularization term"
     θ::Vector{Float64}
@@ -154,8 +154,8 @@ function Base.show(io::IO, enkf::HLocEnKF)
     )
 end
 
-function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix, Ny::Int)
-    ĈX = getĈX(enkf, X, size(X, 1) - Ny, Ny)
+function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix)
+    ĈX = getĈX(enkf, X)
     ĈX_mat = Matrix(ĈX)
     if isnothing(ĈX_mat)
         return FunctionMap{Float64,true}(
@@ -172,12 +172,14 @@ end
 function (enkf::HierarchicalSeqFilter)(
     X_forecast,
     ystar::Vector{Float64},
-    t::Float64
+    t::Float64,
+    verbose::Bool
 )
     X_analysis = deepcopy(X_forecast)
     X_forecast_loop = enkf.useEnKIOpt ? X_analysis : X_forecast
 
-    ĈX_op = getĈX_op(enkf, X_forecast, length(ystar))
+    ĈX_op = getĈX_op(enkf, X_forecast)
+    # push!(Main._A, deepcopy((X_forecast, ĈX_op)))
 
     if enkf.isθshared
         # Initial guess?
@@ -187,11 +189,11 @@ function (enkf::HierarchicalSeqFilter)(
         for _ = 1:enkf.Niter
             copy!(θold, enkf.θ)
 
-            # Update x 
-            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis)
+            # Update x
+            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
 
             # Update theta
-            update_θ!(enkf, X_analysis, enkf.θ, ystar, t)
+            update_θ!(enkf, X_analysis, enkf.θ, ystar, t, verbose)
 
             if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
                 break
@@ -205,18 +207,18 @@ function (enkf::HierarchicalSeqFilter)(
             copy!(θold, enkf.θ)
 
             # Update theta
-            update_θ!(enkf, X_analysis, enkf.θ, ystar, t)
+            update_θ!(enkf, X_analysis, enkf.θ, ystar, t; verbose)
 
-            # Update x 
-            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis)
+            # Update x
+            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
 
             if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
                 break
             end
         end
     end
-    update_x!(enkf, X_forecast, ĈX_op, enkf.θ, ystar, t, X_forecast)
-    return X_forecast, enkf.θ
+    update_x!(enkf, X_forecast, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
+    return X_analysis, enkf.θ
 end
 
-getĈX(enkf::HLocEnKF, X, Nx, Ny; with_matrix=true) = LocalizedEmpiricalCov(X[Ny+1:Ny+Nx, :], enkf.Loc; with_matrix)
+getĈX(enkf::HLocEnKF, X; with_matrix=true) = LocalizedEmpiricalCov(X, enkf.Loc; with_matrix)

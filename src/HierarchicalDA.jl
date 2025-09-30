@@ -37,7 +37,7 @@ include("tools/node_transfer.jl")
 include("tools/vec2sol.jl")
 include("tools/crps.jl")
 include("tools/selection_maps.jl")
-# include("tools/grid.jl")
+include("tools/localization.jl")
 
 
 include("distributions/generalized_gamma.jl")
@@ -45,7 +45,6 @@ include("distributions/extended_gamma.jl")
 
 
 include("PA/PA.jl")
-include("PA/jump_function.jl")
 
 include("update_theta/flow_theta.jl")
 include("update_theta/update_theta.jl")
@@ -66,11 +65,11 @@ include("update_x/update_x_hierarchical_enkf_separate.jl")
 include("update_x/update_x_hierarchical_enkf_shared.jl")
 
 # Setup object for Trixi
-include("trixi/pos_preserving.jl")
 include("trixi/trixi_system.jl")
 include("trixi/mesh2d_tools.jl")
 include("trixi/generate_data.jl")
 include("trixi/seqassim_trixi.jl")
+include("trixi/pos_preserving.jl")
 
 
 # Add equation systems

@@ -7,13 +7,18 @@ function update_x!(
     θ::Vector{Float64},
     ystar::Vector{Float64},
     t,
-    X_analysis
+    X_analysis,
+    verbose::Bool
 )
-    # @assert X_forecast !== X_analysis
     @assert enkf.isθshared
 
+    # Update weight vector θ
+    if !(enkf.sys.Cθ isa LinearMaps.LinearMaps.WrappedMap{Float64})
+        ArgumentError("Wrong type for Cθ")
+    end
+
     Ny = size(ystar, 1)
-    Nx = size(X_forecast, 1) - Ny
+    Nx = size(X_forecast, 1)
     Ne = size(X_forecast, 2)
     Ne = size(X_forecast, 2)
     Nz = enkf.sys.Nz
@@ -22,21 +27,22 @@ function update_x!(
     @assert size(ystar, 1) == Ny
 
     # Generate observational noise samples
-    E = zeros(Ny, Ne)
+    errs = repeat(ystar, 1, Ne)
     if enkf.ϵy isa AdditiveInflation
-        E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
+        if has_nonzero_mean(enkf.ϵy)
+            errs .-= enkf.ϵy.m
+        end
+        errs_samp = zeros(Ny)
+        for j in axes(errs, 2)
+            randn!(errs_samp)
+            mul!(@view(errs[:, j]), enkf.ϵy.σ, errs_samp, true, true)
+        end
     end
-
-    si = zeros(enkf.sys.Nz)
 
     # Update covariance matrix
     enkf.sys.CX = ĈX_op.lmap
-
-    # Update weight vector θ
-    enkf.sys.Cθ isa LinearMaps.LinearMaps.WrappedMap{Float64} || throw(ArgumentError("Wrong type for Cθ"))
-
-    enkf.θ .= θ
-    enkf.sys.Cθ.lmap.diag .= θ
+    copy!(enkf.θ, θ)
+    copy!(enkf.sys.Cθ.lmap.diag, θ)
 
     if enkf.isiterative
         sys_op = LinearMaps.FunctionMap{Float64,true}(
@@ -46,43 +52,47 @@ function update_x!(
             isposdef=true,
         )
     else
-        # @show cond(sys_mat)
         sys_mat = bunchkaufman!(Matrix(enkf.sys))
     end
 
 
     # Compute Kalman-update in a matrix-free way
     ys_i = ObsConstraintVector(Ny, Nz)
-    tmp = ObsConstraintVector(Ny, Nz)
+    tmp = zeros(length(ys_i))
 
     δi = zeros(Nx)
 
     if X_analysis !== X_forecast
-        copy!(view(X_analysis, Ny+1:Ny+Nx, :), view(X_forecast, Ny+1:Ny+Nx, :))
+        copy!(X_analysis, X_forecast)
     end
 
     for i = 1:Ne
-        xi = view(X_analysis, Ny+1:Ny+Nx, i)
+        fill!(ys_i, zero(eltype(ys_i)))
+        fill!(δi, zero(eltype(δi)))
+        xi_forecast = @view X_forecast[:, i]
+        xi_analysis = @view X_analysis[:, i]
         yi = observation(ys_i)
         si = constraint(ys_i)
 
-        mul!(yi, enkf.sys.H, xi)
-        # @assert isapprox(ys_i.x[1], enkf.sys.H * xi, atol=1e-8)
+        err_i = @view errs[:, i]
+        # copy!(yi, err_i)
 
-        yi .+= E[:, i] - ystar
-
-        mul!(si, enkf.sys.S, xi)
-
+        # mul!(yi, enkf.sys.H, xi_forecast, -1, true)
+        # mul!(si, enkf.sys.S, xi_forecast, -1, false)
+        yi .= err_i - enkf.sys.H * xi_forecast
+        si .= -enkf.sys.S * xi_forecast
+        copy!(tmp, ys_i)
         if enkf.isiterative
-            tmp.x[1] .= ys_i.x[1]
-            tmp.x[2] .= ys_i.x[2]
             # Invert sys_op
             cg!(ys_i, sys_op, tmp; log=false, reltol=1e-3)
         else
-            ldiv!(sys_mat, Array(ys_i))
+            ldiv!(sys_mat, tmp)
+            copy!(ys_i, tmp)
         end
-        mul!(δi, enkf.sys.H', observation(ys_i))
-        mul!(δi, enkf.sys.S', constraint(ys_i), true, true)
-        mul!(xi, ĈX_op, δi, -1, true)
+        # mul!(δi, enkf.sys.H', observation(ys_i))
+        # mul!(δi, enkf.sys.S', constraint(ys_i), true, true)
+        # mul!(xi_analysis, ĈX_op, δi, true, true)
+        δi .= enkf.sys.H' * observation(ys_i) + enkf.sys.S' * constraint(ys_i)
+        xi_analysis .= xi_analysis + ĈX_op * δi
     end
 end

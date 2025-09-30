@@ -49,7 +49,7 @@ function sol2vec!(
     x_sol::AbstractMatrix,
     equations::Trixi.AbstractEquations{__D,Nvar};
     g::Function=cons2prim,
-) where {__D, Nvar}
+) where {__D,Nvar}
     for node_idx in eachindex(x_sol)
         xi = x_sol[node_idx]
         node_vals = g(xi, equations)
@@ -59,15 +59,19 @@ function sol2vec!(
     nothing
 end
 
-function sol2vec(x_sol::AbstractVector, equations::Trixi.AbstractEquations{1}; g::Function=cons2prim)
-    x_vec = similar(x_sol)
-    sol2vec!(x_vec, x_sol, equations; g=g)
+recurse_eltype(::Type{<:AbstractArray{T}}) where {T} = T
+recurse_eltype(::Type{<:AbstractArray{T}}) where {T<:AbstractArray} = recurse_eltype(T)
+recurse_eltype(::A) where {A<:AbstractArray} = recurse_eltype(A)
+
+function sol2vec(x_sol::AbstractMatrix, equations::Trixi.AbstractEquations{1,__D}; g::Function=cons2prim) where {__D}
+    x_vec = Vector{recurse_eltype(x_sol)}(undef, length(x_sol) * __D)
+    sol2vec!(x_vec, x_sol, equations; g)
     return x_vec
 end
 
 function sol2vec(x_sol::AbstractMatrix, equations::Trixi.AbstractEquations{2,Nvar}; g::Function=cons2prim) where {Nvar}
     x_vec = Vector{Float64}(undef, Nvar * length(x_sol))
-    sol2vec!(x_vec, x_sol, equations; g=g)
+    sol2vec!(x_vec, x_sol, equations; g)
     return x_vec
 end
 
@@ -115,7 +119,7 @@ function vec2sol!(
     x_vec::AbstractVector,
     equations::Trixi.AbstractEquations{__D,Nvar};
     g::Function=prim2cons,
-) where {__D, Nvar}
+) where {__D,Nvar}
     N_per_elem, N_total_elem = size(x_sol)
 
     for elem_idx in 1:N_total_elem

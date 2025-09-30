@@ -1,17 +1,17 @@
 export generate_data_trixi
 
-function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem; ode_solver=SSPRK43(), cfl=0.2, record_first=false, ode_kwargs...)
+function generate_data_trixi(model::Model, x0, Tf::Int64, sys::TrixiSystem; ode_solver=SSPRK43(), cfl=0.2, record_first=false, ode_kwargs...)
 
     @assert model.Nx == size(x0, 1) "Error dimension of the input"
-    xt = zeros(model.Nx, J)
+    xt = zeros(model.Nx, Tf)
 
     x = deepcopy(x0)
     # First is for the interpolation points, second is for the quadrature points
     x_quad = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
     x_itp = similar(x_quad)
 
-    yt = zeros(model.Ny, J + record_first)
-    tt = zeros(J)
+    yt = zeros(model.Ny, Tf + record_first)
+    tt = zeros(Tf)
 
     t0 = 0.0
 
@@ -42,9 +42,9 @@ function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem; ode_s
         end
     end
 
-    @showprogress for i = 1:J
+    @showprogress for time_idx = 1:Tf
         # Run dynamics and save results
-        tspan = (t0 + (i - 1) * model.Δtobs, t0 + i * model.Δtobs)
+        tspan = (t0 + (time_idx - 1) * model.Δtobs, t0 + time_idx * model.Δtobs)
 
         # At this point, the vector x is provided at the Gauss-Legendre nodes
         vec2sol!(x_quad, x, sys.equations; g=prim2cons)
@@ -52,7 +52,6 @@ function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem; ode_s
         get_interp_node_vals!(sys.dg, x_quad, x_itp)
 
         prob = remake(prob, u0=x_itp, tspan=tspan)
-
         sol = solve(
             prob,
             ode_solver;
@@ -71,15 +70,15 @@ function generate_data_trixi(model::Model, x0, J::Int64, sys::TrixiSystem; ode_s
         model.ϵx(x)
 
         # Collect observations
-        tt[i] = i * model.Δtobs
-        copy!(@view(xt[:, i]), x)
-        copy!(@view(yt[:, i+record_first]), model.F.h(x, tt[i]))
+        tt[time_idx] = time_idx * model.Δtobs
+        copy!(@view(xt[:, time_idx]), x)
+        copy!(@view(yt[:, time_idx+record_first]), model.F.h(x, tt[time_idx]))
 
         if model.ϵy isa AdditiveInflation
             if has_nonzero_mean(model.ϵy)
-                y[:, i+record_first] .+= model.ϵy.m
+                y[:, time_idx+record_first] .+= model.ϵy.m
             end
-            mul!(@view(yt[:, i+record_first]), model.ϵy.σ, randn(model.Ny), true, true)
+            mul!(@view(yt[:, time_idx+record_first]), model.ϵy.σ, randn(model.Ny), true, true)
         end
     end
     return SyntheticData(tt, model.Δtdyn, x0, xt, yt)

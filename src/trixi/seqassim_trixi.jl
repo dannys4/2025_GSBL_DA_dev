@@ -52,72 +52,50 @@ function seqassim_trixi(
     stepsize_callback = StepsizeCallback(; cfl)
 
     # collect all callbacks such that they can be passed to the ODE solver
-    callbacks = CallbackSet(stepsize_callback)
+    # callbacks = CallbackSet(stepsize_callback)
 
-    # Check if we assimilate the initial state
-    assimilate_first = size(data.yt, 2) == length(data.tt) + 1
-    # if assimilate_first
-    #     ystar = @view(data.yt[:, 1])
-    #     if algo isa HierarchicalSeqFilter
-    #         X, θ = algo(X, ystar, 0.)
-    #     else
-    #         X = algo(X, ystar, 0.)
-    #     end
-
-
-    #     # Filter state
-    #     if algo.isfiltered
-    #         for i = 1:Ne
-    #             statei = @view X[:, i]
-    #             statei .= algo.G(statei)
-    #         end
-    #     end
-    #     if isnothing(store_state_path)
-    #         push!(statehist, copy(X))
-    #     else
-    #         @save joinpath(store_state_path, "ens0_$(now()).jld2") X
-    #     end
-
-    #     if algo isa HierarchicalSeqFilter
-    #         push!(θhist, copy(θ))
-    #     end
-    # end
     output_func = (sol, i) -> (sol[end], false)
     # Run filtering algorithm
     J > 0 && @showprogress "Filtering using $(typeof(algo))..." for i = 1:length(Acycle)
-
         # Forecast
         tspan = (t0 + (i - 1) * Δtobs, t0 + i * Δtobs)
         function prob_func(prob, j, repeat)
             # At this point, the vector x is provided at the Gauss-Legendre nodes
-            vec2sol!(x_quad, @view(X[:, j]), sys.equations)
+            # Converting primitive to constrained variables
+            vec2sol!(x_quad, @view(X[:, j]), sys.equations, g=prim2cons)
             # We need to move them to the Lobatto-Legendre nodes
             get_interp_node_vals!(sys.dg, x_quad, x_itp)
-            remake(prob, u0=x_itp, tspan=tspan)
+            ret = remake(prob, u0=x_itp, tspan=tspan)
+            ret
         end
 
         ensemble_prob = EnsembleProblem(prob; output_func, prob_func=prob_func)
-
-        sim = solve(
-            ensemble_prob,
-            ode_solver,
-            adaptive=true,
-            EnsembleSerial(),
-            trajectories=Ne,
-            dense=false,
-            save_everystep=false,
-            callback=stepsize_callback;
-            ode_kwargs...
-        )
+        sim = nothing
+        try
+            sim = solve(
+                ensemble_prob,
+                ode_solver,
+                adaptive=true,
+                EnsembleSerial(),
+                trajectories=Ne,
+                dense=false,
+                save_everystep=false,
+                callback=stepsize_callback;
+                ode_kwargs...
+            )
+        catch _
+            break
+        end
 
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
             get_quadrature_node_vals!(sys.dg, x_quad, sim[i])
+            # Perform data assimilation on the primitive variables at quadrature nodes
             sol2vec!(@view(X[:, i]), x_quad, sys.equations; g=cons2prim)
         end
 
         # Assimilation # Get real measurement # Fix this later # Things are shifted in data.yt
-        ystar = data.yt[:, Acycle[i]+assimilate_first]
+        ystar = data.yt[:, Acycle[i]]
         # Replace at some point by realobserve(model.h, t0+i*model.Δtobs, ens)
         # Perform inflation for each ensemble member
         ϵx(X, 1, Nx)
@@ -136,7 +114,7 @@ function seqassim_trixi(
         if algo.isfiltered
             for i = 1:Ne
                 statei = @view X[:, i]
-                statei .= algo.G(statei)
+                algo.G(statei)
             end
         end
 

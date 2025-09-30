@@ -6,7 +6,8 @@ function update_x!(
     θ::Matrix{Float64},
     ystar::Vector{Float64},
     t,
-    X_analysis
+    X_analysis,
+    verbose::Bool
 )
     @assert !enkf.isθshared
 
@@ -32,8 +33,8 @@ function update_x!(
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
         Nx;
-        issymmetric = true,
-        isposdef = false,
+        issymmetric=true,
+        isposdef=false,
     )
 
     # Update covariance matrix
@@ -44,8 +45,8 @@ function update_x!(
     sys_op = LinearMaps.FunctionMap{Float64,true}(
         (y, x) -> mul!(y, enkf.sys, x),
         Ny + Ns;
-        issymmetric = true,
-        isposdef = true,
+        issymmetric=true,
+        isposdef=true,
     )
     if X_forecast !== X_analysis
         copy!(view(X_analysis, Ny+1:Ny+Nx, :), view(X_forecast, Ny+1:Ny+Nx, :))
@@ -77,7 +78,7 @@ function update_x!(
         si = constraint(ys_i)
 
         mul!(yi, enkf.sys.H, xi)
-        @assert isapprox(ys_i.x[1], enkf.sys.H * xi, atol = 1e-8)
+        @assert isapprox(ys_i.x[1], enkf.sys.H * xi, atol=1e-8)
 
         yi .+= E[:, i] - ystar
 
@@ -85,7 +86,7 @@ function update_x!(
 
         if enkf.isiterative
             # Invert sys_op
-            cg!(ys_i, sys_op, copy(ys_i); log = false, reltol = 1e-3)
+            cg!(ys_i, sys_op, copy(ys_i); log=false, reltol=1e-3)
         else
             ldiv!(ys_i, sys_mat, ys_i)
         end
