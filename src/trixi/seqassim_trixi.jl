@@ -70,22 +70,17 @@ function seqassim_trixi(
         end
 
         ensemble_prob = EnsembleProblem(prob; output_func, prob_func=prob_func)
-        sim = nothing
-        try
-            sim = solve(
-                ensemble_prob,
-                ode_solver,
-                adaptive=true,
-                EnsembleSerial(),
-                trajectories=Ne,
-                dense=false,
-                save_everystep=false,
-                callback=stepsize_callback;
-                ode_kwargs...
-            )
-        catch _
-            break
-        end
+        sim = solve(
+            ensemble_prob,
+            ode_solver,
+            adaptive=true,
+            EnsembleSerial(),
+            trajectories=Ne,
+            dense=false,
+            save_everystep=false,
+            callback=stepsize_callback;
+            ode_kwargs...
+        )
 
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
