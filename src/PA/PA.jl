@@ -54,8 +54,6 @@ function PolyAnnil_single(x::Vector, m::Int64; istruncated=false, isperiodic=fal
         copy!(dst, @view(PA[1:r, 1:r]))
         dst = @view PA[end-r+1:end, r+1:2r]
         copy!(dst, @view(PA[end-r+1:end, end-r+1:end]))
-        # @info "" size(PA[end-m+1:end-r, r+1:m]) size(PA[end-m+1:end-r, end-r+1:end])
-        # PA[end-m+1:end-r, (r+1):m] .+= PA[end-m+1:end-r, end-r+1:end]
         PA = PA[:, xidx]
     end
     sparse(PA)
