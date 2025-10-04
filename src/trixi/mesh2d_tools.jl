@@ -32,7 +32,7 @@ function get_square_mesh_N_cells(mesh::DGMultiMesh{2,Trixi.Affine})
 end
 
 # Only works with 2d non-curved meshes with quad elements
-function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int)
+function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int; kwargs...)
     N_cells = get_square_mesh_N_cells(mesh)
     yq = mesh.md.yq
     polydeg = Int(sqrt(size(yq, 1))) - 1
@@ -41,8 +41,10 @@ function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int)
     vv = get_vertical_slice_elements(init_slice_idx, polydeg, N_cells)
     nn = get_vertical_slice_nodes(init_slice_idx, polydeg)
     all_y_quad = yq[nn, vv]
-    vec_quad = all_y_quad[:]
-    PA_local = PolyAnnil(vec_quad, PA_order).P
+    vec_quad = vec(all_y_quad)
+    PA_local = PolyAnnil_single(vec_quad, PA_order; kwargs...)
+    PA_offset = (PA_order + 1) ÷ 2
+    # @info "" size(PA_local)
     node_indices = LinearIndices(yq)
     num_nodes = length(yq)
     # Now create the global polynomial annihilator
@@ -53,15 +55,20 @@ function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int)
         nn = get_vertical_slice_nodes(slice_idx, polydeg)
         # node_idxs are equiv to reduce(vcat, nn .+ (j-1)*N_cells*(polydeg+1)*(polydeg+1) for j in 1:N_cells)
         # Gets the indices of the nodes corresponding to this PA operator
-        node_idxs = vec(node_indices[nn, vv])
-        PA_global[node_idxs, node_idxs] = PA_local
+        # @info "" node_indices[nn, vv]
+        col_idxs = vec(node_indices[nn, vv])
+        row_idxs = col_idxs[PA_offset+1:end-PA_offset]
+        # @info "" PA_offset
+        # @info "" row_idxs
+        PA_global[row_idxs, col_idxs] = PA_local
     end
-    # PolyAnnil(vec_quad, PA_order, )
     PA_global, vec_quad
 end
 
-function VerticalPolyAnnil2D(mesh::DGMultiMesh, PA_order, Nvar=1)
-    base_PA, vec_quad = __VerticalPolyAnnil2D(mesh, PA_order)
+function VerticalPolyAnnil2D(mesh::DGMultiMesh, PA_order; Nvar=1, kwargs...)
+    base_PA, vec_quad = __VerticalPolyAnnil2D(mesh, PA_order; kwargs...)
+    nz_idx = vec(mapreduce(!iszero, |, base_PA, dims=2))
+    base_PA = base_PA[nz_idx, :]
     select_kron = IdentityMap(Nvar)
     full_PA = Nvar == 1 ? base_PA : kron(base_PA, select_kron)
     # N_row, N_col = size(base_PA)
@@ -71,11 +78,10 @@ function VerticalPolyAnnil2D(mesh::DGMultiMesh, PA_order, Nvar=1)
     #     col_idxs = (1:N_col) .+ (diag_block - 1) * N_col
     #     full_PA[row_idxs, col_idxs] .= base_PA
     # end
-    #TODO: Remove Matrix!
-    PolyAnnil(vec_quad, PA_order, sparse(full_PA))
+    PolyAnnil(vec_quad, PA_order, sparse(full_PA)), nz_idx
 end
 
-VerticalPolyAnnil2D(sys::TrixiSystem, PA_order, Nvar=1) = VerticalPolyAnnil2D(sys.mesh, PA_order, Nvar)
+VerticalPolyAnnil2D(sys::TrixiSystem, PA_order; kwargs...) = VerticalPolyAnnil2D(sys.mesh, PA_order; kwargs...)
 
 gaspari2D(offset_x, offset_y, radius) = gaspari(2 * sqrt(abs2(offset_x) + abs2(offset_y)) / radius)
 

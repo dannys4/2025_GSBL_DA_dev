@@ -30,14 +30,6 @@ function ObsSystem(H::LinearMap, Cϵ::LinearMap, CX::T=Matrix{Float64}(undef, 0,
     return ObsSystem{T,typeof(workspace)}(Nx, Ny, H, Cϵ, CX, workspace)
 end
 
-# function modify_CX!(sys::ObsSystem{M}, CX::M) where {M}
-#     sys.CX = CX
-# end
-
-# function modify_CX!(sys::LinearMap, CX)
-
-# end
-
 function Base.show(io::IO, sys::ObsSystem)
     print(io, "Observation system of size $(sys.Ny)")
 end

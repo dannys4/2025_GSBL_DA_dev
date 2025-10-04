@@ -81,6 +81,23 @@ end
 
 Base.size(s::SelectionMap) = s.size
 
+function Base.getindex(A::SelectionMap{true}, row::Int, ::Colon)
+    row > size(A, 1) && BoundsError()
+    row <= length(A.idxs) ? sparsevec([A.idxs[row]], [true], A.size[2]) : spzeros(A.size)
+end
+
+function Base.getindex(A::SelectionMap{false}, ::Colon, col::Int)
+    Base.getindex(A', col, :)
+end
+
+function Base.Matrix(A::SelectionMap{true})
+    sparse(eachindex(A.idxs), A.idxs, ones(Bool, length(A.idxs)), A.size...)
+end
+
+function Base.Matrix(A::SelectionMap{false})
+    Matrix(A')'
+end
+
 function Base.getindex(A::T, I1::V1, I2::V2) where {T<:Union{IdentityMap,LinearMaps.UniformScalingMap},V1,V2}
     if (A isa LinearMaps.UniformScalingMap && !isone(A.λ)) || !(V1 == Colon || V2 == Colon)
         return getindex(Matrix(A), I1, I2)

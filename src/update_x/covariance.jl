@@ -66,10 +66,17 @@ end
 function localization_elementwise_mul(A::SparseMatrixCSC, B::AbstractMatrix)
     C = similar(A)
     nonzero_idxs = findall(!iszero, A)
-    @inbounds for (sp_idx, c_idx) in enumerate(nonzero_idxs)
-        C.nzval[sp_idx] = A.nzval[sp_idx] * B[c_idx]
+    @inbounds begin
+        Trixi.@threaded for sp_idx in eachindex(nonzero_idxs)
+            c_idx = nonzero_idxs[sp_idx]
+            C.nzval[sp_idx] = A.nzval[sp_idx] * B[c_idx]
+        end
     end
     C
+end
+
+function localization_elementwise_mul(A::LinearMaps.WrappedMap, B::AbstractMatrix)
+    localization_elementwise_mul(A.lmap, B)
 end
 
 function localization_elementwise_mul(A::AbstractMatrix, B::AbstractMatrix)
@@ -97,6 +104,28 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
     return LocalizedEmpiricalCov(Nx, Ne, center_X, μX, Loc, CX, CXloc, workspace)
 end
 
+function __inner_prod(C::LocalizedEmpiricalCov, u::AbstractVector)
+    ret = zero(eltype(u))
+    T = promote_type(eltype(u), eltype(C.center_X))
+    X_mul_U = similar(u, T)
+    herm_loc = C.Loc.ρX.lmap
+    for i in 1:C.Ne
+        xi = @view C.center_X[:, i]
+        if u isa SparseVector
+            for (u_idx, x_idx) in enumerate(u.nzind)
+                # @info "" X_mul_U.nzval[u_idx] xi[x_idx] u.nzval[u_idx]
+                X_mul_U.nzval[u_idx] = xi[x_idx] * u.nzval[u_idx]
+            end
+        else
+            for idx in eachindex(X_mul_U, xi, u)
+                X_mul_U[idx] = xi[idx] * u[idx]
+            end
+        end
+        ret += dot(X_mul_U, herm_loc, X_mul_U)
+    end
+    ret / (C.Ne - 1)
+end
+
 function cov_mul!(
     v,
     Ĉ::LocalizedEmpiricalCov,
@@ -117,13 +146,14 @@ function cov_mul!(
         # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf, slide 4
         # (A ⊙ ∑ u_j v_j^T) x = ∑ D_{u_j} A D_{v_j} x
         # = ∑ u_j ⊙ (A (v_j ⊙ x))
-        X_mul_U = similar(u)
+        X_mul_U = similar(u, promote_type(eltype(u), eltype(Ĉ.center_X)))
         @inbounds for i = 1:Ĉ.Ne
             xi = @view Ĉ.center_X[:, i]
             # Recall that xi is centered in constructor.
             # v .+= Diagonal(xi) * (Ĉ.Loc.ρX * (xi .* u))
             if u isa SparseVector
                 for (u_idx, x_idx) in enumerate(u.nzind)
+                    # @info "" X_mul_U.nzval[u_idx] xi[x_idx] u.nzval[u_idx]
                     X_mul_U.nzval[u_idx] = xi[x_idx] * u.nzval[u_idx]
                 end
             else
@@ -133,7 +163,6 @@ function cov_mul!(
             for state_idx in eachindex(v)
                 v[state_idx] = muladd(xi[state_idx], Localize_Mul[state_idx], v[state_idx])
             end
-            # @show "we haven't applied localization yet, more a placeholder for now"
         end
         v .*= inv(Ĉ.Ne - 1)
     else
@@ -171,5 +200,5 @@ function (*)(Ĉ::LocalizedEmpiricalCov, u::SparseVector{Float64})
 end
 
 function Base.Matrix(C::LocalizedEmpiricalCov)
-    return C.CXloc
+    isnothing(C.CXloc) ? C * I(size(C, 1)) : C.CXloc
 end

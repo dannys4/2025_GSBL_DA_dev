@@ -154,16 +154,11 @@ function Base.show(io::IO, enkf::HLocEnKF)
     )
 end
 
-function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix)
-    ĈX = getĈX(enkf, X)
+function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix; kwargs...)
+    ĈX = getĈX(enkf, X; kwargs...)
     ĈX_mat = Matrix(ĈX)
     if isnothing(ĈX_mat)
-        return FunctionMap{Float64,true}(
-            (y, x) -> mul!(y, ĈX, x),
-            Nx;
-            issymmetric=true,
-            isposdef=false,
-        )
+        return ĈX
     else
         return LinearMap(ĈX_mat)
     end
@@ -178,20 +173,24 @@ function (enkf::HierarchicalSeqFilter)(
     X_analysis = deepcopy(X_forecast)
     X_forecast_loop = enkf.useEnKIOpt ? X_analysis : X_forecast
 
-    ĈX_op = getĈX_op(enkf, X_forecast)
-    # push!(Main._A, deepcopy((X_forecast, ĈX_op)))
+    # workspace_sparsity = findall(isnan, enkf.sys.H' * fill(NaN, size(enkf.sys.H, 1)))
+    verbose && @info "Getting Covariance..."
+    ĈX_op = getĈX(enkf, X_forecast; with_matrix=!enkf.isiterative)
 
     if enkf.isθshared
         # Initial guess?
         fill!(enkf.θ, enkf.θinit)
 
         θold = zero(enkf.θ)
-        for _ = 1:enkf.Niter
+        for i = 1:enkf.Niter
+            verbose && @info "IAS Optimization i = $i"
             copy!(θold, enkf.θ)
+            verbose && @info "θ copied"
 
             # Update x
             update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
 
+            verbose && @info "x updated"
             # Update theta
             update_θ!(enkf, X_analysis, enkf.θ, ystar, t, verbose)
 
@@ -217,8 +216,9 @@ function (enkf::HierarchicalSeqFilter)(
             end
         end
     end
+    verbose && @info "Finished optimization loop."
     update_x!(enkf, X_forecast, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
     return X_analysis, enkf.θ
 end
 
-getĈX(enkf::HLocEnKF, X; with_matrix=true) = LocalizedEmpiricalCov(X, enkf.Loc; with_matrix)
+getĈX(enkf::HLocEnKF, X; kwargs...) = LocalizedEmpiricalCov(X, enkf.Loc; kwargs...)
