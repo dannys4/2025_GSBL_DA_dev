@@ -53,9 +53,10 @@ function LinearMaps._unsafe_mul!(output, sys::ObsSystem, input, alpha, beta)
     @unpack CX_H_T_X, H_T_X = workspace
 
     # y = H C H' + Γ
+    mat_H = Matrix(H)
     mul!(output, Cϵ, input, alpha, beta)
-    mul!(H_T_X, H', input)
+    mul!(H_T_X, mat_H', input)
     mul!(CX_H_T_X, CX, H_T_X)
-    mul!(output, H, CX_H_T_X, alpha, true)
+    mul!(output, mat_H, CX_H_T_X, alpha, true)
     return output
 end

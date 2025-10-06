@@ -116,11 +116,20 @@ function seqassim_trixi(
         if isnothing(store_state_path)
             push!(statehist, copy(X))
         else
-            @save joinpath(store_state_path, "ens$(i)_$(now()).jld2") X
+            fname = joinpath(store_state_path, "$(typeof(algo))_$(i)_$(now()).jld2")
+            if algo isa HierarchicalSeqFilter
+                @save fname X θ
+            else
+                @save fname X
+            end
         end
 
         if algo isa HierarchicalSeqFilter
-            push!(θhist, copy(θ))
+            if isnothing(store_state_path)
+                push!(θhist, copy(θ))
+            else
+                θhist = copy(θ)
+            end
         end
     end
     if algo isa HierarchicalSeqFilter
