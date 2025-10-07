@@ -42,9 +42,7 @@ end
 LinearMaps.issymmetric(z::ZeroMap) = z.size[1] == z.size[2]
 LinearMaps.MulStyle(::ZeroMap) = FiveArg()
 Base.size(z::ZeroMap) = z.size
-function Base.eltype(::ZeroMap{T}) where {T}
-    T
-end
+Base.eltype(::ZeroMap{T}) where {T} = T
 LinearAlgebra.adjoint(z::ZeroMap{T}) where {T} = ZeroMap{T}((z.size[2], z.size[1]))
 LinearAlgebra.transpose(z::ZeroMap) = adjoint(z)
 
@@ -56,14 +54,10 @@ function zero_mul!(y, beta)
     end
     y
 end
-# LinearMaps._unsafe_mul!(y, ::ZeroMap, _) = zero_mul!(y, false)
 LinearMaps._unsafe_mul!(y::AbstractVector{T}, ::ZeroMap{T}, x::AbstractVector{T}, alpha=true, beta=false) where {T} = zero_mul!(y, beta)
 LinearMaps._unsafe_mul!(y::AbstractMatrix{T}, ::ZeroMap{T}, x::AbstractMatrix{T}, alpha=true, beta=false) where {T} = zero_mul!(y, beta)
-# LinearMaps._unsafe_mul!(y::MV, ::ZeroMap{T}, ::MV, alpha=true, beta=false) where {T,MV<:AbstractMatrix{T}} = zero_mul!(y, beta)
 
-
-
-# If IsOut true, y = H*x <=> y == x[idxs]. If false, y = H*x <=> y[idxs] == x
+# If IsOut true, y = H*x <=> y <- x[idxs]. If false, y = H*x <=> y[idxs] <- x
 struct SelectionMap{IsOut,T,V<:AbstractVector{Int}} <: LinearMap{T}
     idxs::V
     size::Tuple{Int,Int}
@@ -71,12 +65,12 @@ end
 
 LinearMaps.MulStyle(::SelectionMap) = FiveArg()
 
-function SelectionMap(idxs::_V, selection::Symbol; in_size=maximum(idxs), _::Type{_T}=Float64) where {_V,_T}
+function SelectionMap(idxs::V, selection::Symbol; in_size=maximum(idxs), _::Type{T}=Float64) where {V,T}
     @assert selection in (:in, :out) "Can only select in or out"
     @assert maximum(idxs) <= in_size && all(>(0), idxs)
     sort_idxs = sort(idxs)
     IsOut = selection == :out
-    SelectionMap{IsOut,_T,_V}(sort_idxs, (length(sort_idxs), in_size))
+    SelectionMap{IsOut,T,V}(sort_idxs, (length(sort_idxs), in_size))
 end
 
 Base.size(s::SelectionMap) = s.size

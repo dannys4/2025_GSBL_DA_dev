@@ -23,6 +23,7 @@ function seqassim_trixi(
     verbose=false,
     ode_kwargs...
 )
+    sim_id = Int(rand(UInt32))
     Ne = size(X, 2)
     Δtobs = algo.Δtobs
     statehist = Matrix{Float64}[]
@@ -56,7 +57,7 @@ function seqassim_trixi(
 
     output_func = (sol, i) -> (sol[end], false)
     # Run filtering algorithm
-    J > 0 && @showprogress "Filtering using $(typeof(algo))..." for i = 1:length(Acycle)
+    J > 0 && @showprogress "Filtering using $(typeof(algo))..." for i = eachindex(Acycle)
         # Forecast
         tspan = (t0 + (i - 1) * Δtobs, t0 + i * Δtobs)
         function prob_func(prob, j, repeat)
@@ -116,7 +117,8 @@ function seqassim_trixi(
         if isnothing(store_state_path)
             push!(statehist, copy(X))
         else
-            fname = joinpath(store_state_path, "$(typeof(algo))_$(i)_$(now()).jld2")
+            algo_str = split(string(typeof(algo)), "{")[1]
+            fname = joinpath(store_state_path, "$(algo_str)_t$(i)_$(sim_id).jld2")
             if algo isa HierarchicalSeqFilter
                 @save fname X θ
             else

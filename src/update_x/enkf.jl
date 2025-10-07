@@ -1,11 +1,11 @@
-import TransportBasedInference2: SeqFilter
+import TransportBasedInference2
 
 export EnKF
 
 """
 $(TYPEDEF)
 
-A structure for the variational formulation of the hierarchical 
+A structure for the variational formulation of the hierarchical
 stochastic ensemble Kalman filter (EnKF)
 
 References:
@@ -43,8 +43,8 @@ function EnKF(
     sys::ObsSystem,
     Δtdyn,
     Δtobs;
-    isiterative = false,
-    isfiltered = false,
+    isiterative=false,
+    isfiltered=false,
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -61,8 +61,8 @@ end
 function Base.show(io::IO, enkf::EnKF)
     println(
         io,
-        "Ensemble Kalman filter with 
-iterative solver = $(enkf.isiterative) and 
+        "Ensemble Kalman filter with
+iterative solver = $(enkf.isiterative) and
 filtered = $(enkf.isfiltered)",
     )
 
@@ -88,8 +88,8 @@ function update_x!(enkf::EnKF, X_forecast, ystar::Vector{Float64}, t, X_analysis
     ĈX_op = FunctionMap{Float64,true}(
         (y, x) -> mul!(y, ĈX, x),
         Nx;
-        issymmetric = true,
-        isposdef = false,
+        issymmetric=true,
+        isposdef=false,
     )
 
     # Update covariance matrix
@@ -98,8 +98,8 @@ function update_x!(enkf::EnKF, X_forecast, ystar::Vector{Float64}, t, X_analysis
     sys_op = LinearMaps.FunctionMap{Float64,true}(
         (y, x) -> mul!(y, enkf.sys, x),
         Ny;
-        issymmetric = true,
-        isposdef = true,
+        issymmetric=true,
+        isposdef=true,
     )
 
     if !enkf.isiterative
@@ -124,7 +124,7 @@ function update_x!(enkf::EnKF, X_forecast, ystar::Vector{Float64}, t, X_analysis
         xi = view(X_analysis, Ny+1:Ny+Nx, i)
 
         mul!(yi, enkf.sys.H, xi)
-        @assert isapprox(yi, enkf.sys.H * xi, atol = 1e-8)
+        @assert isapprox(yi, enkf.sys.H * xi, atol=1e-8)
 
         yi .+= E[:, i] - ystar
 
@@ -132,7 +132,7 @@ function update_x!(enkf::EnKF, X_forecast, ystar::Vector{Float64}, t, X_analysis
             yi .= sys_mat \ yi
         else
             # Invert sys_op
-            cg!(yi, sys_op, copy(yi); log = false, reltol = 1e-3)
+            cg!(yi, sys_op, copy(yi); log=false, reltol=1e-3)
         end
 
         δi .= enkf.sys.H' * yi
@@ -143,10 +143,10 @@ end
 
 function (enkf::EnKF)(X, ystar::Array{Float64,1}, t::Float64)
 
-    # Update x 
+    # Update x
     update_x!(enkf, X, ystar, t, X)
 
     return X
 end
 
-getĈX(::EnKF, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X[Ny+1:Ny+Nx, :];with_matrix)
+getĈX(::EnKF, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix)

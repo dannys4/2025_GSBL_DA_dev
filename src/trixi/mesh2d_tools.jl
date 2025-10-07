@@ -1,6 +1,6 @@
 export VerticalPolyAnnil2D, create_observation_operator2d, sample_initial_state2d
 
-using TransportBasedInference2: Localization
+import TransportBasedInference2
 
 # Because this uses intrinsic types from StartupDG, we keep this in the trixi subdir
 function get_vertical_slice_elements(slice_idx, polydeg, N_cells)

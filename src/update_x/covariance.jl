@@ -1,5 +1,6 @@
 export EmpiricalCov, LocalizedEmpiricalCov
-using LinearMaps: _unsafe_mul!, MulStyle, issymmetric, ishermitian
+using LinearMaps: _unsafe_mul!, issymmetric, ishermitian
+import LinearMaps
 using Base: size
 abstract type AbstractEmpiricalCov <: LinearMaps.LinearMap{Float64} end
 

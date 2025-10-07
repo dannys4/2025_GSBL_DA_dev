@@ -11,21 +11,27 @@ References:
 $(TYPEDFIELDS)
 """
 
-struct HLocEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
+struct HLocEnKF{
+    ThetaT<:AbstractFlowTheta,
+    GT<:Function,
+    ET<:InflationType,
+    ObsT<:ObsConstraintSystem,
+    LT<:Localization
+} <: HierarchicalSeqFilter
     "Filter function"
-    G::Function
+    G::GT
 
     "Standard deviations of the measurement noise distribution"
-    ϵy::InflationType
+    ϵy::ET
 
     "Structure for observation and constraint"
-    sys::ObsConstraintSystem
+    sys::ObsT
 
     "Localization structure"
-    Loc::Localization
+    Loc::LT
 
     "GeneralizedGamma distribution"
-    dist::GeneralizedGamma
+    dist::GeneralizedGamma{Float64}
 
     "Flow theta"
     flow::ThetaT
@@ -59,6 +65,9 @@ struct HLocEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
 
     "Use Ensemble Kalman inversion while finding θ"
     useEnKIOpt::Bool
+
+    "Tolerance for Conjugate Gradient if isiterative"
+    cg_tol::Float64
 end
 
 function HLocEnKF(
@@ -77,6 +86,7 @@ function HLocEnKF(
     rtolθ::Float64=1e-4,
     θinit::Float64=1.,
     useEnKIOpt::Bool=false,
+    cg_tol=1e-6
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -100,7 +110,8 @@ function HLocEnKF(
         Niter,
         rtolθ,
         θinit,
-        useEnKIOpt
+        useEnKIOpt,
+        cg_tol
     )
 end
 
@@ -117,7 +128,8 @@ function HLocEnKF(
     Niter::Int=40,
     rtolθ::Float64=1e-4,
     θinit::Float64=1.,
-    useEnKIOpt::Bool=false
+    useEnKIOpt::Bool=false,
+    cg_tol=1e-6
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
@@ -141,7 +153,8 @@ function HLocEnKF(
         Niter,
         rtolθ,
         θinit,
-        useEnKIOpt
+        useEnKIOpt,
+        cg_tol
     )
 end
 

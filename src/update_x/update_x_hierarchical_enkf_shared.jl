@@ -82,8 +82,7 @@ function update_x!(
         if enkf.isiterative
             # Invert sys_op
             cg_out = copy(tmp)
-            precond = Diagonal(sys_op)
-            cg!(cg_out, sys_op, tmp; log=false, verbose=false, reltol=1e-10, Pl=precond)
+            cg!(cg_out, sys_op, tmp; log=false, verbose=false, reltol=enkf.cg_tol)
             copy!(ys_i, cg_out)
         else
             ldiv!(sys_mat, tmp)
