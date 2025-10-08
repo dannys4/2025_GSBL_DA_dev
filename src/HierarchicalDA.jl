@@ -43,18 +43,13 @@ include("tools/localization.jl")
 include("distributions/generalized_gamma.jl")
 include("distributions/extended_gamma.jl")
 
-
-include("PA/PA.jl")
-
-include("update_theta/flow_theta.jl")
-include("update_theta/update_theta.jl")
-
-
+include("update_x/covariance.jl")
 include("update_x/vectors.jl")
 include("update_x/obs_system.jl")
 include("update_x/obs_constraint_system.jl")
 
-include("update_x/covariance.jl")
+include("update_theta/flow_theta.jl")
+include("update_theta/update_theta.jl")
 
 include("update_x/enkf.jl")
 include("update_x/localized_enkf.jl")
@@ -63,6 +58,9 @@ include("update_x/hierarchical_enkf.jl")
 include("update_x/hierarchical_localized_enkf.jl")
 include("update_x/update_x_hierarchical_enkf_separate.jl")
 include("update_x/update_x_hierarchical_enkf_shared.jl")
+
+
+include("PA/PA.jl")
 
 # Setup object for Trixi
 include("trixi/trixi_system.jl")

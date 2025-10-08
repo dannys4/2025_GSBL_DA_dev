@@ -43,21 +43,14 @@ function seqassim_trixi(
 
     prob = semidiscretize(sys.semi, tspan)
 
-    # prints a summary of the simulation setup and resets the timers
-    # summary_callback = SummaryCallback()
-
-    # analyse the solution in regular intervals and prints the results
-    # analysis_callback = AnalysisCallback(semi, interval = 100, uEltype = real(dg))
-
     # handles the re-calculation of the maximum Δt after each time step
     stepsize_callback = StepsizeCallback(; cfl)
 
-    # collect all callbacks such that they can be passed to the ODE solver
-    # callbacks = CallbackSet(stepsize_callback)
-
     output_func = (sol, i) -> (sol[end], false)
+    algo_str = string(nameof(typeof(algo)))
+    X = θ = nothing
     # Run filtering algorithm
-    J > 0 && @showprogress "Filtering using $(typeof(algo))..." for i = eachindex(Acycle)
+    @showprogress "Filtering using $(algo_str)..." for i = eachindex(Acycle)
         # Forecast
         tspan = (t0 + (i - 1) * Δtobs, t0 + i * Δtobs)
         function prob_func(prob, j, repeat)
@@ -126,14 +119,17 @@ function seqassim_trixi(
             end
         end
 
-        if algo isa HierarchicalSeqFilter
-            if isnothing(store_state_path)
-                push!(θhist, copy(θ))
-            else
-                θhist = copy(θ)
-            end
+        if algo isa HierarchicalSeqFilter && isnothing(store_state_path)
+            push!(θhist, copy(θ))
         end
     end
+    if !isnothing(store_state_path)
+        statehist = [X]
+        if algo isa HierarchicalSeqFilter
+            θhist = [θ]
+        end
+    end
+
     if algo isa HierarchicalSeqFilter
         return statehist, θhist
     else

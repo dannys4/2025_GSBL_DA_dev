@@ -20,7 +20,7 @@ LinearMaps.MulStyle(::ObsSystem) = FiveArg()
 LinearMaps.issymmetric(::ObsSystem) = true
 LinearMaps.ishermitian(::ObsSystem) = true
 
-function ObsSystem(H, Cϵ, CX=Matrix{Float64}(undef, 0, 0); use_workspace=false, sparse_pattern=nothing, cg_tol=1e-6)
+function ObsSystem(H, Cϵ, CX=Matrix{Float64}(undef, 0, 0); use_workspace=false, sparse_pattern=nothing)
     Ny, Nx = size(H)
     if use_workspace
         H_T_X = isnothing(sparse_pattern) ? zeros(Nx) : sparsevec(sparse_pattern, ones(length(sparse_pattern)), Nx)

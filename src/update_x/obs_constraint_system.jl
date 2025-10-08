@@ -22,8 +22,7 @@ mutable struct ObsConstraintSystem{
     CXT,
     HT<:LinearMap,ST<:LinearMap,
     CθT<:LinearMap,CϵT<:LinearMap,
-    MT<:AbstractMatrix,
-    CacheT<:Union{Nothing,ObsConstraintSysCache{MT}},
+    CacheT<:Union{Nothing,ObsConstraintSysCache{<:AbstractMatrix}},
     SysCacheT<:Union{Nothing,Matrix{Float64}},
     MatVecCacheT<:Union{Nothing,NTuple{2,Vector{Float64}}}
 } <: LinearMaps.LinearMap{Float64}
@@ -47,12 +46,12 @@ function ObsConstraintSystem(
     Cθ::LinearMap,
     Cϵ::LinearMap,
     CX::T=Matrix{Float64}(undef, 0, 0);
-    cache=true,
+    cache_matrix=true,
     isiterative=false,
 ) where {T}
     Ny, Nx = size(H)
     Nz = size(S, 1)
-    cache_YS, cache_sys = cache ? ObsConstraintSysCache(Ny, Nz) : (nothing, nothing)
+    cache_YS, cache_sys = cache_matrix ? ObsConstraintSysCache(Ny, Nz) : (nothing, nothing)
     cache_matvec = isiterative ? (Vector{Float64}(undef, Nx), Vector{Float64}(undef, Nx)) : nothing
     return ObsConstraintSystem(CX, Nx, Ny, Nz, H, S, Cθ, Cϵ, cache_YS, cache_sys, cache_matvec)
 end
@@ -136,7 +135,7 @@ function Base.Matrix(sys::ObsConstraintSystem)
     mul!(C_YY, H_CX, Matrix(H'), true, true)
 
     initialize_sys_diag_block!(C_SS, Cθ)
-    mul!(C_SS, S.lmap, Matrix(CX * S'), true, true)
+    mul!(C_SS, S.lmap, CX * S', true, true)
     # cache_sys shares memory with C_YY,C_YS,C_SS
     return Hermitian(cache_sys, :U)
 end

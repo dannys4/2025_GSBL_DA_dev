@@ -114,6 +114,7 @@ function update_x!(enkf::LocEnKF, X_forecast::AbstractMatrix{Float64}, ystar::Ab
     if enkf.isiterative
         # Creates linear map object
         sys_op = enkf.sys
+        precond = Diagonal(sys_op)
     else
         # @show cond(sys_mat)
         sys_mat = bunchkaufman!(Matrix(enkf.sys))
@@ -140,7 +141,7 @@ function update_x!(enkf::LocEnKF, X_forecast::AbstractMatrix{Float64}, ystar::Ab
             # Invert sys_op
             copy!(iterative_RHS, yi)
             fill!(yi, zero(eltype(yi)))
-            cg!(yi, sys_op, iterative_RHS; log=false, verbose=false, reltol=enkf.cg_tol)
+            cg!(yi, sys_op, iterative_RHS; log=false, verbose=false, reltol=enkf.cg_tol, Pl=precond)
         else
             # yi .= sys_mat \ yi
             ldiv!(sys_mat, yi)

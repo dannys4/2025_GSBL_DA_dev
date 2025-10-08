@@ -50,6 +50,7 @@ function update_x!(
     verbose && @info "Getting sys op"
     if enkf.isiterative
         sys_op = enkf.sys
+        precond = Diagonal(sys_op)
     else
         sys_mat = bunchkaufman!(Matrix(enkf.sys))
     end
@@ -82,7 +83,7 @@ function update_x!(
         if enkf.isiterative
             # Invert sys_op
             cg_out = copy(tmp)
-            cg!(cg_out, sys_op, tmp; log=false, verbose=false, reltol=enkf.cg_tol)
+            cg!(cg_out, sys_op, tmp; log=false, verbose=false, reltol=enkf.cg_tol, Pl=precond)
             copy!(ys_i, cg_out)
         else
             ldiv!(sys_mat, tmp)

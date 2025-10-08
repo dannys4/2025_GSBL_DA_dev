@@ -2,6 +2,7 @@ export EmpiricalCov, LocalizedEmpiricalCov
 using LinearMaps: _unsafe_mul!, issymmetric, ishermitian
 import LinearMaps
 using Base: size
+import Base: *
 abstract type AbstractEmpiricalCov <: LinearMaps.LinearMap{Float64} end
 
 LinearMaps.issymmetric(::AbstractEmpiricalCov) = true
@@ -50,20 +51,6 @@ function LinearMaps._unsafe_mul!(v::AbstractVector{Float64}, Ĉ::EmpiricalCov, 
     return v
 end
 
-struct LocalizedEmpiricalCov{
-    LT,CT<:Union{Nothing,<:AbstractMatrix{Float64}},W
-} <: AbstractEmpiricalCov
-
-    Nx::Int64
-    Ne::Int64
-    center_X::Matrix{Float64}
-    μX::Vector{Float64}
-    Loc::LT
-    CX::Union{Nothing,Matrix{Float64}}
-    CXloc::CT
-    workspace::W
-end
-
 function localization_elementwise_mul(A::SparseMatrixCSC, B::AbstractMatrix)
     C = similar(A)
     nonzero_idxs = findall(!iszero, A)
@@ -84,6 +71,19 @@ function localization_elementwise_mul(A::AbstractMatrix, B::AbstractMatrix)
     A .* B
 end
 
+struct LocalizedEmpiricalCov{
+    LT,CT<:Union{Nothing,<:AbstractMatrix{Float64}},W
+} <: AbstractEmpiricalCov
+    Nx::Int64
+    Ne::Int64
+    center_X::Matrix{Float64}
+    μX::Vector{Float64}
+    Loc::LT
+    CX::Union{Nothing,Matrix{Float64}}
+    CXloc::CT
+    workspace::W
+end
+
 function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix=true, workspace_sparsity=nothing)
     Nx, Ne = size(X)
     μX = vec(mean(X; dims=2))
@@ -97,34 +97,38 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
         CX = (center_X * center_X') / (Ne - 1)
         CXloc = localization_elementwise_mul(Loc.ρX, CX)
     else
-        X_mul_U = isnothing(workspace_sparsity) ? similar(μX) : sparsevec(workspace_sparsity, ones(length(workspace_sparsity)), length(μX))
-        Localize_Mul = similar(μX)
+        workspace_size = size(center_X)
+        X_mul_U = if isnothing(workspace_sparsity)
+            similar(μX, workspace_size)
+        else
+            ArgumentError("TODO: Support sparse workspace")
+            # sparsevec(workspace_sparsity, ones(length(workspace_sparsity)), length(μX))
+        end
+        Localize_Mul = similar(μX, workspace_size)
         workspace = (; X_mul_U, Localize_Mul)
     end
 
     return LocalizedEmpiricalCov(Nx, Ne, center_X, μX, Loc, CX, CXloc, workspace)
 end
 
+nz_iterator(x::AbstractVector) = zip(eachindex(x), x)
+nz_iterator(x::SparseVector) = zip(x.nzind, x.nzval)
+
 function __inner_prod(C::LocalizedEmpiricalCov, u::AbstractVector)
     ret = zero(eltype(u))
-    T = promote_type(eltype(u), eltype(C.center_X))
-    X_mul_U = similar(u, T)
-    herm_loc = C.Loc.ρX.lmap
-    for i in 1:C.Ne
-        xi = @view C.center_X[:, i]
-        if u isa SparseVector
-            for (u_idx, x_idx) in enumerate(u.nzind)
-                # @info "" X_mul_U.nzval[u_idx] xi[x_idx] u.nzval[u_idx]
-                X_mul_U.nzval[u_idx] = xi[x_idx] * u.nzval[u_idx]
-            end
-        else
-            for idx in eachindex(X_mul_U, xi, u)
-                X_mul_U[idx] = xi[idx] * u[idx]
-            end
+    localization_mat = C.Loc.ρX.lmap
+    ret = Vector{Float64}(undef, C.Ne)
+    tmp = similar(u, Float64)
+    for ens_idx in 1:C.Ne
+        fill!(tmp, 0.)
+        xi = @view C.center_X[:, ens_idx]
+        # tmp_i = @view X_mul_U[:, ens_idx]
+        for (state_idx, u_val) in nz_iterator(u)
+            tmp[state_idx] = xi[state_idx] * u_val
         end
-        ret += dot(X_mul_U, herm_loc, X_mul_U)
+        ret[ens_idx] = dot(tmp, localization_mat, tmp)
     end
-    ret / (C.Ne - 1)
+    sum(ret) / (C.Ne - 1)
 end
 
 function cov_mul!(
@@ -133,59 +137,41 @@ function cov_mul!(
     u,
     α, β
 )
-    if isnothing(Ĉ.CX)
-        # @assert α && !β
-        if β isa Bool
-            # If beta = false, fill with zeros
-            # Otherwise, v should stay as-is
-            β || fill!(v, zero(eltype(v)))
-        else
-            # If beta is not a bool, just straight-up multiply
-            v .*= β
+    @inbounds if isnothing(Ĉ.CX)
+        if iszero(β)
+            fill!(v, zero(eltype(v)))
+        elseif !isone(β)
+            lmul!(β, v)
         end
         (; X_mul_U, Localize_Mul) = Ĉ.workspace
         # Using https://pi.math.cornell.edu/~ajt/presentations/HadamardProduct.pdf, slide 4
         # (A ⊙ ∑ u_j v_j^T) x = ∑ D_{u_j} A D_{v_j} x
         # = ∑ u_j ⊙ (A (v_j ⊙ x))
-        X_mul_U = similar(u, promote_type(eltype(u), eltype(Ĉ.center_X)))
-        @inbounds for i = 1:Ĉ.Ne
-            xi = @view Ĉ.center_X[:, i]
-            # Recall that xi is centered in constructor.
-            # v .+= Diagonal(xi) * (Ĉ.Loc.ρX * (xi .* u))
-            if u isa SparseVector
-                for (u_idx, x_idx) in enumerate(u.nzind)
-                    # @info "" X_mul_U.nzval[u_idx] xi[x_idx] u.nzval[u_idx]
-                    X_mul_U.nzval[u_idx] = xi[x_idx] * u.nzval[u_idx]
-                end
-            else
-                X_mul_U .= xi .* u
-            end
-            mul!(Localize_Mul, Ĉ.Loc.ρX, X_mul_U, α, false)
-            for state_idx in eachindex(v)
-                v[state_idx] = muladd(xi[state_idx], Localize_Mul[state_idx], v[state_idx])
+        fill!(X_mul_U, zero(eltype(X_mul_U)))
+        for ens_idx in axes(X_mul_U, 2)
+            for (state_idx, u_val) in nz_iterator(u)
+                X_mul_U[state_idx, ens_idx] = Ĉ.center_X[state_idx, ens_idx] * u_val
             end
         end
-        v .*= inv(Ĉ.Ne - 1)
+        mul!(Localize_Mul, Ĉ.Loc.ρX, X_mul_U, α, false)
+        for state_idx in eachindex(v)
+            for ens_idx in axes(Ĉ.center_X, 2)
+                v[state_idx] = muladd(Ĉ.center_X[state_idx, ens_idx], Localize_Mul[state_idx, ens_idx], v[state_idx])
+            end
+            v[state_idx] /= Ĉ.Ne - 1
+        end
     else
         mul!(v, Ĉ.CXloc, u, α, β)
     end
     return v
 end
 
-function LinearMaps._unsafe_mul!(v::AbstractMatrix, Ĉ::LocalizedEmpiricalCov, u::AbstractMatrix, alpha, beta)
+function LinearMaps._unsafe_mul!(v::AbstractMatrix, Ĉ::LocalizedEmpiricalCov, u::AbstractMatrix, alpha=true, beta=false)
     cov_mul!(v, Ĉ, u, alpha, beta)
 end
 
-function LinearMaps._unsafe_mul!(v::AbstractMatrix, Ĉ::LocalizedEmpiricalCov, u::AbstractMatrix)
-    cov_mul!(v, Ĉ, u, true, false)
-end
-
-function LinearMaps._unsafe_mul!(v::AbstractVector, Ĉ::LocalizedEmpiricalCov, u::AbstractVector, alpha, beta)
+function LinearMaps._unsafe_mul!(v::AbstractVector, Ĉ::LocalizedEmpiricalCov, u::AbstractVector, alpha=true, beta=false)
     cov_mul!(v, Ĉ, u, alpha, beta)
-end
-
-function LinearMaps._unsafe_mul!(v::AbstractVector, Ĉ::LocalizedEmpiricalCov, u::AbstractVector)
-    cov_mul!(v, Ĉ, u, true, false)
 end
 
 function (*)(Ĉ::LocalizedEmpiricalCov, u::AbstractVector{Float64})

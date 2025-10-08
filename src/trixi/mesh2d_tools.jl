@@ -32,7 +32,7 @@ function get_square_mesh_N_cells(mesh::DGMultiMesh{2,Trixi.Affine})
 end
 
 # Only works with 2d non-curved meshes with quad elements
-function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int; kwargs...)
+function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int; isperiodic=false, kwargs...)
     N_cells = get_square_mesh_N_cells(mesh)
     yq = mesh.md.yq
     polydeg = Int(sqrt(size(yq, 1))) - 1
@@ -42,7 +42,7 @@ function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int;
     nn = get_vertical_slice_nodes(init_slice_idx, polydeg)
     all_y_quad = yq[nn, vv]
     vec_quad = vec(all_y_quad)
-    PA_local = PolyAnnil_single(vec_quad, PA_order; kwargs...)
+    PA_local = PolyAnnil_single(vec_quad, PA_order; isperiodic, kwargs...)
     PA_offset = (PA_order + 1) ÷ 2
     # @info "" size(PA_local)
     node_indices = LinearIndices(yq)
@@ -57,7 +57,7 @@ function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int;
         # Gets the indices of the nodes corresponding to this PA operator
         # @info "" node_indices[nn, vv]
         col_idxs = vec(node_indices[nn, vv])
-        row_idxs = col_idxs[PA_offset+1:end-PA_offset]
+        row_idxs = isperiodic ? col_idxs : col_idxs[PA_offset+1:end-PA_offset]
         # @info "" PA_offset
         # @info "" row_idxs
         PA_global[row_idxs, col_idxs] = PA_local
@@ -217,10 +217,11 @@ TransportBasedInference2.Localization(
 function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
     @assert offset < spacing
     N_cells = get_square_mesh_N_cells(mesh)
-    yq = mesh.md.yq
+    (; xq, yq) = mesh.md
     polydeg = Int(sqrt(size(yq, 1))) - 1
     # @assert spacing % (polydeg + 1) == 0
     # @assert local_radius <= polydeg + 1 "Currently only supports radius that is below polynomial degree. Got $local_radius > $(polydeg+1)"
+    xq_reshape = reshape(xq, polydeg + 1, polydeg + 1, N_cells, N_cells)
     yq_reshape = reshape(yq, polydeg + 1, polydeg + 1, N_cells, N_cells)
 
     # How many elements over the index is
@@ -228,6 +229,7 @@ function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int, offse
 
     num_obs = ceil(Int, N_cells * (polydeg + 1) / spacing)^2
     obs_indices = zeros(Int, num_obs)
+    obs_points = zeros(2, num_obs)
     obs_idx = 1
     for (node_matrix_idx, c_idx) in enumerate(CartesianIndices(yq_reshape))
         elem_row_idx, elem_col_idx, global_row_idx, global_col_idx = Tuple(c_idx)
@@ -237,10 +239,11 @@ function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int, offse
         is_col_spaced = col_idx % spacing == offset
         if is_row_spaced && is_col_spaced
             obs_indices[obs_idx] = node_matrix_idx
+            obs_points[:, obs_idx] .= (xq_reshape[c_idx], yq_reshape[c_idx])
             obs_idx += 1
         end
     end
-    return SelectionMap(obs_indices, :out; in_size=length(yq_reshape))
+    return SelectionMap(obs_indices, :out; in_size=length(yq_reshape)), obs_points
 end
 
 function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int; offset::Int=1, Nvar::Int=1, which_var::AbstractVector=1:Nvar)

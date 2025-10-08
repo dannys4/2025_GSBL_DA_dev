@@ -94,7 +94,11 @@ end
 
 function Base.getindex(A::T, I1::V1, I2::V2) where {T<:Union{IdentityMap,LinearMaps.UniformScalingMap},V1,V2}
     if (A isa LinearMaps.UniformScalingMap && !isone(A.λ)) || !(V1 == Colon || V2 == Colon)
-        return getindex(Matrix(A), I1, I2)
+        if I1 isa Int && I2 isa Int
+            return I1 == I2 ? A.λ : 0.
+        else
+            return getindex(Matrix(A), I1, I2)
+        end
     end
     IsOut = V2 == Colon
     if IsOut
@@ -121,7 +125,7 @@ function select_mul!(y, H::SelectionMap{IsOut}, x, alpha, beta) where {IsOut}
     if iszero(beta)
         fill!(y, zero(eltype(y)))
     else
-        rmul!(y, beta)
+        isone(beta) || rmul!(y, beta)
     end
     if IsOut
         for (y_idx, x_idx) in enumerate(H.idxs)
@@ -149,11 +153,8 @@ function Base.:(*)(A::SelectionMap{IsOut}, x::AbstractVector) where {IsOut}
     return @inbounds mul!(y, A, x)
 end
 
-LinearMaps._unsafe_mul!(y::AbstractMatrix, H::SelectionMap, x::AbstractMatrix) = select_mul!(y, H, x, true, false)
-LinearMaps._unsafe_mul!(y::AbstractVector, H::SelectionMap, x::AbstractVector) = select_mul!(y, H, x)
-
-LinearMaps._unsafe_mul!(y::AbstractMatrix, H::SelectionMap, x::AbstractMatrix, alpha, beta) = select_mul!(y, H, x, alpha, beta)
-LinearMaps._unsafe_mul!(y::AbstractVector, H::SelectionMap, x::AbstractVector, alpha, beta) = select_mul!(y, H, x, alpha, beta)
+LinearMaps._unsafe_mul!(y::AbstractMatrix, H::SelectionMap, x::AbstractMatrix, alpha=true, beta=false) = select_mul!(y, H, x, alpha, beta)
+LinearMaps._unsafe_mul!(y::AbstractVector, H::SelectionMap, x::AbstractVector, alpha=true, beta=false) = select_mul!(y, H, x, alpha, beta)
 
 
 function LinearAlgebra.adjoint(H::SelectionMap{IsOut,T,V}) where {IsOut,T,V}
