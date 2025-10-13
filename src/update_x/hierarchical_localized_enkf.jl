@@ -195,7 +195,7 @@ function (enkf::HierarchicalSeqFilter)(
         fill!(enkf.θ, enkf.θinit)
 
         θold = zero(enkf.θ)
-        for i = 1:enkf.Niter
+        @showprogress for i = 1:enkf.Niter
             verbose && @info "IAS Optimization i = $i"
             copy!(θold, enkf.θ)
             verbose && @info "θ copied"

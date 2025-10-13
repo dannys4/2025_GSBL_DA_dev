@@ -1,18 +1,25 @@
-export VerticalPolyAnnil2D, create_observation_operator2d, sample_initial_state2d
+export PolyAnnil2D, create_observation_operator2d, sample_initial_state2d
 
 import TransportBasedInference2
 
 # Because this uses intrinsic types from StartupDG, we keep this in the trixi subdir
-function get_vertical_slice_elements(slice_idx, polydeg, N_cells)
-    # Which element in a given horizontal set of elements is this in
-    horiz_elem_idx = (slice_idx - 1) ÷ (polydeg + 1) + 1
-    # Which vertical slice within the element is this in
-    (0:N_cells-1) * N_cells .+ horiz_elem_idx
+function get_slice_elements(slice_idx, polydeg, N_cells, mode::Symbol)
+    mode == :y || mode == :x || throw(ArgumentError("Unexpected mode: $mode"))
+    # Which element in a given set of elements is this in
+    elem_offset = (slice_idx - 1) ÷ (polydeg + 1) + 1
+    if mode == :y
+        # Which vertical slice within the element is this in
+        (0:N_cells-1) * N_cells .+ elem_offset
+    else
+        (1:N_cells) .+ (elem_offset - 1) * N_cells
+    end
 end
 
-function get_vertical_slice_nodes(slice_idx, polydeg)
+function get_slice_nodes(slice_idx, polydeg, mode::Symbol)
+    mode == :y || mode == :x || throw(ArgumentError("Unexpected mode: $mode"))
     shap_slice = mod1(slice_idx, polydeg + 1)
-    reshape(1:(polydeg+1)^2, polydeg + 1, :)[shap_slice, :]
+    shap = reshape(1:(polydeg+1)^2, polydeg + 1, :)
+    mode == :y ? shap[shap_slice, :] : shap[:, shap_slice]
 end
 
 function get_square_mesh_N_cells(mesh::DGMultiMesh{2,Trixi.Affine})
@@ -32,56 +39,58 @@ function get_square_mesh_N_cells(mesh::DGMultiMesh{2,Trixi.Affine})
 end
 
 # Only works with 2d non-curved meshes with quad elements
-function __VerticalPolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int; isperiodic=false, kwargs...)
+function __PolyAnnil2D(mesh::DGMultiMesh{2,Trixi.Affine}, PA_order::Int; isperiodic=false, kwargs...)
     N_cells = get_square_mesh_N_cells(mesh)
-    yq = mesh.md.yq
+    (; xq, yq) = mesh.md
+    num_nodes = length(yq)
     polydeg = Int(sqrt(size(yq, 1))) - 1
     init_slice_idx = 1
     # Initialize the local polynomial annihilator
-    vv = get_vertical_slice_elements(init_slice_idx, polydeg, N_cells)
-    nn = get_vertical_slice_nodes(init_slice_idx, polydeg)
-    all_y_quad = yq[nn, vv]
-    vec_quad = vec(all_y_quad)
-    PA_local = PolyAnnil_single(vec_quad, PA_order; isperiodic, kwargs...)
+    # X information
+    vv_x = get_slice_elements(init_slice_idx, polydeg, N_cells, :x)
+    nn_x = get_slice_nodes(init_slice_idx, polydeg, :x)
+    all_x_quad = xq[nn_x, vv_x]
+    vec_quad_x = vec(all_x_quad)
+    PA_local_x = PolyAnnil_single(vec_quad_x, PA_order; isperiodic, kwargs...)
+    PA_global_x = spzeros(num_nodes, num_nodes)
+
+    # Y information
+    vv_y = get_slice_elements(init_slice_idx, polydeg, N_cells, :y)
+    nn_y = get_slice_nodes(init_slice_idx, polydeg, :y)
+    all_y_quad = yq[nn_y, vv_y]
+    vec_quad_y = vec(all_y_quad)
+    PA_local_y = PolyAnnil_single(vec_quad_y, PA_order; isperiodic, kwargs...)
+    PA_global_y = spzeros(num_nodes, num_nodes)
+
     PA_offset = (PA_order + 1) ÷ 2
-    # @info "" size(PA_local)
     node_indices = LinearIndices(yq)
-    num_nodes = length(yq)
-    # Now create the global polynomial annihilator
-    PA_global = spzeros(num_nodes, num_nodes)
     # There are polydeg+1 slices per element and N_cells elements per side
     for slice_idx in 1:((polydeg+1)*N_cells)
-        vv = get_vertical_slice_elements(slice_idx, polydeg, N_cells)
-        nn = get_vertical_slice_nodes(slice_idx, polydeg)
-        # node_idxs are equiv to reduce(vcat, nn .+ (j-1)*N_cells*(polydeg+1)*(polydeg+1) for j in 1:N_cells)
-        # Gets the indices of the nodes corresponding to this PA operator
-        # @info "" node_indices[nn, vv]
-        col_idxs = vec(node_indices[nn, vv])
-        row_idxs = isperiodic ? col_idxs : col_idxs[PA_offset+1:end-PA_offset]
-        # @info "" PA_offset
-        # @info "" row_idxs
-        PA_global[row_idxs, col_idxs] = PA_local
+        vv_x = get_slice_elements(slice_idx, polydeg, N_cells, :x)
+        nn_x = get_slice_nodes(slice_idx, polydeg, :x)
+        col_idxs_x = vec(node_indices[nn_x, vv_x])
+        row_idxs_x = isperiodic ? col_idxs_x : col_idxs_x[PA_offset+1:end-PA_offset]
+        PA_global_x[row_idxs_x, col_idxs_x] .+= PA_local_x
+
+        vv_y = get_slice_elements(slice_idx, polydeg, N_cells, :y)
+        nn_y = get_slice_nodes(slice_idx, polydeg, :y)
+        col_idxs_y = vec(node_indices[nn_y, vv_y])
+        row_idxs_y = isperiodic ? col_idxs_y : col_idxs_y[PA_offset+1:end-PA_offset]
+        PA_global_y[row_idxs_y, col_idxs_y] .+= PA_local_y
     end
-    PA_global, vec_quad
+    vcat(PA_global_x, PA_global_y), vcat(vec_quad_x, vec_quad_y)
 end
 
-function VerticalPolyAnnil2D(mesh::DGMultiMesh, PA_order; Nvar=1, kwargs...)
-    base_PA, vec_quad = __VerticalPolyAnnil2D(mesh, PA_order; kwargs...)
+function PolyAnnil2D(mesh::DGMultiMesh, PA_order; Nvar=1, kwargs...)
+    base_PA, vec_quad = __PolyAnnil2D(mesh, PA_order; kwargs...)
     nz_idx = vec(mapreduce(!iszero, |, base_PA, dims=2))
     base_PA = base_PA[nz_idx, :]
     select_kron = IdentityMap(Nvar)
     full_PA = Nvar == 1 ? base_PA : kron(base_PA, select_kron)
-    # N_row, N_col = size(base_PA)
-    # full_PA = spzeros(Nvar * N_row, Nvar * N_col)
-    # for diag_block in 1:Nvar
-    #     row_idxs = (1:N_row) .+ (diag_block - 1) * N_row
-    #     col_idxs = (1:N_col) .+ (diag_block - 1) * N_col
-    #     full_PA[row_idxs, col_idxs] .= base_PA
-    # end
     PolyAnnil(vec_quad, PA_order, sparse(full_PA)), nz_idx
 end
 
-VerticalPolyAnnil2D(sys::TrixiSystem, PA_order; kwargs...) = VerticalPolyAnnil2D(sys.mesh, PA_order; kwargs...)
+PolyAnnil2D(sys::TrixiSystem, PA_order; kwargs...) = PolyAnnil2D(sys.mesh, PA_order; kwargs...)
 
 gaspari2D(offset_x, offset_y, radius) = gaspari(2 * sqrt(abs2(offset_x) + abs2(offset_y)) / radius)
 

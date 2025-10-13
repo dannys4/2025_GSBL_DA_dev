@@ -15,8 +15,8 @@ end
 function PolyAnnil_single(x::Vector, m::Int64; istruncated=false, isperiodic=false, periodic_limits=nothing)
     r = ceil(Int64, m / 2)
     if isperiodic
-        (periodic_limits isa NTuple{2,<:Real}) || ArgumentError("Expected periodic limits (x_min, x_max), got $periodic_limits")
-        istruncated || ArgumentError("If isperiodic=true, must have istruncated=true")
+        isa(periodic_limits, NTuple{2,<:Real}) || throw(ArgumentError("Expected periodic limits (x_min, x_max), got $periodic_limits"))
+        istruncated || throw(ArgumentError("If isperiodic=true, must have istruncated=true"))
         x_min, x_max = periodic_limits
         x = vcat((x_min - x_max) .+ x[end-r+1:end], x, (x_max - x_min) .+ x[1:r])
     end

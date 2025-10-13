@@ -48,7 +48,8 @@ function seqassim_trixi(
 
     output_func = (sol, i) -> (sol[end], false)
     algo_str = string(nameof(typeof(algo)))
-    X = θ = nothing
+    θ = nothing
+
     # Run filtering algorithm
     @showprogress "Filtering using $(algo_str)..." for i = eachindex(Acycle)
         # Forecast
