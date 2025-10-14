@@ -67,8 +67,6 @@ include("filter/filter.jl")
 include("update_x/hierarchical_separate.jl")
 include("update_x/hierarchical_shared.jl")
 
-# include("PA/PA.jl")
-
 include("trixi/tools.jl")
 include("trixi/generate_data.jl")
 include("trixi/seqassim_trixi.jl")

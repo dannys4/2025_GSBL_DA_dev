@@ -88,7 +88,7 @@ function HLocEnKF(
     useEnKIOpt::Bool=false,
     cg_tol=1e-6
 )
-    @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
+    # @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne=Ne)
 
@@ -131,7 +131,7 @@ function HLocEnKF(
     useEnKIOpt::Bool=false,
     cg_tol=1e-6
 )
-    @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
+    # @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne=Ne)
 

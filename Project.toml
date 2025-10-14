@@ -4,7 +4,6 @@ authors = ["mleprovost <mleprovo@mit.edu>", "dannys4 <dannys4@mit.edu>"]
 version = "0.1.1"
 
 [deps]
-BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
@@ -29,15 +28,16 @@ UnPack = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 Symbolics = "0c5d862f-8b57-4792-8d23-62f2024744c7"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
 
-[sources]
-TransportBasedInference2 = {rev = "main", url = "https://github.com/dannys4/TransportBasedInference2.jl"}
+[extensions]
+HierarchicalDAMakieExt = "Makie"
 
 [compat]
-BandedMatrices = "1.9.4"
 Dates = "1.11.0"
 JLD2 = "0.5.15"
 LinearMaps = "3.11.4"
-TransportBasedInference2 = "0.1.5"
+Makie = "0.22"
+OrdinaryDiffEq = "6"
 Trixi = "0.9.17"
 julia = "1.11"
