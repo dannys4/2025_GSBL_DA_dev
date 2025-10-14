@@ -2,6 +2,20 @@ export PolyAnnil2D, create_observation_operator2d, sample_initial_state2d
 
 import TransportBasedInference2
 
+function GridFromMesh(sys::TrixiSystem{<:Any,<:DGSEM,<:StructuredMesh{1}})
+    mesh, basis = sys.mesh, sys.dg.basis
+    L = mesh.cells_per_dimension[1]
+    verts = range(0, 1, length=L + 1)[1:end-1]
+    shift_nodes = (basis.nodes .+ 1) / 2
+    nodes01 = repeat(verts', length(shift_nodes), 1) .+ (shift_nodes / L)
+    nodes = vec(mesh.mapping.(nodes01 * 2 .- 1))
+    return nodes
+end
+
+function GridFromMesh(sys::TrixiSystem{<:Any,<:DGMulti{1}})
+    return vec(sys.mesh.md.xq)
+end
+
 # Because this uses intrinsic types from StartupDG, we keep this in the trixi subdir
 function get_slice_elements(slice_idx, polydeg, N_cells, mode::Symbol)
     mode == :y || mode == :x || throw(ArgumentError("Unexpected mode: $mode"))

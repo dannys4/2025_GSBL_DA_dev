@@ -29,6 +29,22 @@ import UnPack: @unpack
 using TransportBasedInference2: SeqFilter
 
 abstract type HierarchicalSeqFilter <: TransportBasedInference2.SeqFilter end
+abstract type AbstractEmpiricalCov <: LinearMaps.LinearMap{Float64} end
+LinearMaps.issymmetric(::AbstractEmpiricalCov) = true
+LinearMaps.ishermitian(::AbstractEmpiricalCov) = true
+LinearMaps.MulStyle(::AbstractEmpiricalCov) = LinearMaps.FiveArg()
+Base.size(C::AbstractEmpiricalCov) = (C.Nx, C.Nx)
+
+struct TrixiSystem{Eqns<:Trixi.AbstractEquations,Solver,MeshT,Semi<:Trixi.AbstractSemidiscretization}
+    equations::Eqns
+
+    dg::Solver
+
+    mesh::MeshT
+
+    semi::Semi
+end
+
 
 include("tools/modulo_realnumbers.jl")
 include("tools/unroll.jl")
@@ -43,7 +59,9 @@ include("tools/localization.jl")
 include("distributions/generalized_gamma.jl")
 include("distributions/extended_gamma.jl")
 
-include("update_x/covariance.jl")
+include("covariance/empirical.jl")
+include("covariance/localized_empirical.jl")
+
 include("update_x/vectors.jl")
 include("update_x/obs_system.jl")
 include("update_x/obs_constraint_system.jl")
@@ -63,8 +81,7 @@ include("update_x/update_x_hierarchical_enkf_shared.jl")
 include("PA/PA.jl")
 
 # Setup object for Trixi
-include("trixi/trixi_system.jl")
-include("trixi/mesh2d_tools.jl")
+include("trixi/tools.jl")
 include("trixi/generate_data.jl")
 include("trixi/seqassim_trixi.jl")
 include("trixi/pos_preserving.jl")

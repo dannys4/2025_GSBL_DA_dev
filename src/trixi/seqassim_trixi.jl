@@ -48,6 +48,10 @@ function seqassim_trixi(
 
     output_func = (sol, i) -> (sol[end], false)
     algo_str = string(nameof(typeof(algo)))
+    if !isnothing(store_state_path)
+        store_state_path = joinpath(store_state_path, "$(algo_str)_$(sim_id)")
+        mkdir(store_state_path)
+    end
     θ = nothing
 
     # Run filtering algorithm
@@ -112,7 +116,7 @@ function seqassim_trixi(
             push!(statehist, copy(X))
         else
             algo_str = split(string(typeof(algo)), "{")[1]
-            fname = joinpath(store_state_path, "$(algo_str)_t$(i)_$(sim_id).jld2")
+            fname = joinpath(store_state_path, "t$(i).jld2")
             if algo isa HierarchicalSeqFilter
                 @save fname X θ
             else
