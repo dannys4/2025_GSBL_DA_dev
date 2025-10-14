@@ -1,6 +1,5 @@
 module HierarchicalDA
 
-using BandedMatrices
 using DocStringExtensions
 using Distributions
 using IterativeSolvers
@@ -48,6 +47,7 @@ include("tools/smooth_periodic.jl")
 include("tools/crps.jl")
 include("tools/selection_maps.jl")
 include("tools/localization.jl")
+include("tools/viz.jl")
 
 include("distributions/generalized_gamma.jl")
 include("distributions/extended_gamma.jl")
