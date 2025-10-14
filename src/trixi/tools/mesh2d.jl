@@ -2,20 +2,6 @@ export PolyAnnil2D, create_observation_operator2d, sample_initial_state2d
 
 import TransportBasedInference2
 
-function GridFromMesh(sys::TrixiSystem{<:Any,<:DGSEM,<:StructuredMesh{1}})
-    mesh, basis = sys.mesh, sys.dg.basis
-    L = mesh.cells_per_dimension[1]
-    verts = range(0, 1, length=L + 1)[1:end-1]
-    shift_nodes = (basis.nodes .+ 1) / 2
-    nodes01 = repeat(verts', length(shift_nodes), 1) .+ (shift_nodes / L)
-    nodes = vec(mesh.mapping.(nodes01 * 2 .- 1))
-    return nodes
-end
-
-function GridFromMesh(sys::TrixiSystem{<:Any,<:DGMulti{1}})
-    return vec(sys.mesh.md.xq)
-end
-
 # Because this uses intrinsic types from StartupDG, we keep this in the trixi subdir
 function get_slice_elements(slice_idx, polydeg, N_cells, mode::Symbol)
     mode == :y || mode == :x || throw(ArgumentError("Unexpected mode: $mode"))
@@ -208,34 +194,6 @@ TransportBasedInference2.Localization(
     local_radius::Int;
     kwargs...
 ) = Localization(sys.mesh, local_radius; kwargs...)
-
-# Metric should map (row_diff::Int, col_diff::Int) -> Float64
-# If you are comparing integer coords (5, 8) and (7, 2), then output should assume input (-2, 6)
-
-# function TransportBasedInference2.Localization(
-#     mesh::DGMultiMesh{2,Trixi.Affine},
-#     local_radius::Int;
-#     kernel::Function=(x, y) -> gaspari2D(x, y, local_radius),
-#     isperiodic=true,
-#     Nvar::Int=1
-# )
-#     rows, cols, vals = LocalizationMatrix2D(mesh, local_radius, kernel, isperiodic)
-#     loc = sparse(rows, cols, vals)
-#     dropzeros!(loc)
-#     if isperiodic
-#         loc_map = LinearMap(loc, issymmetric=true)
-#     else
-#         N_cells = get_square_mesh_N_cells(mesh)
-#         loc_small = collect(loc[1:N_cells*N_cells, 1:N_cells*N_cells])
-#         loc_small_map = LinearMap(loc_small, issymmetric=true)
-#         kron_I_size = size(loc, 1) ÷ (N_cells * N_cells)
-#         select_kron = IdentityMap(kron_I_size)
-#         loc_map = kron(select_kron, loc_small_map)
-#     end
-#     select_kron = IdentityMap(Nvar)
-#     loc_vars = Nvar == 1 ? loc : kron(loc_map, select_kron)
-#     return Localization(loc_vars)
-# end
 
 function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
     @assert offset < spacing

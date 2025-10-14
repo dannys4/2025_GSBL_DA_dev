@@ -37,18 +37,14 @@ Base.size(C::AbstractEmpiricalCov) = (C.Nx, C.Nx)
 
 struct TrixiSystem{Eqns<:Trixi.AbstractEquations,Solver,MeshT,Semi<:Trixi.AbstractSemidiscretization}
     equations::Eqns
-
     dg::Solver
-
     mesh::MeshT
-
     semi::Semi
 end
+export TrixiSystem
 
-
+include("tools/PA.jl")
 include("tools/smooth_periodic.jl")
-include("tools/node_transfer.jl")
-include("tools/vec2sol.jl")
 include("tools/crps.jl")
 include("tools/selection_maps.jl")
 include("tools/localization.jl")
@@ -71,12 +67,11 @@ include("filter/filter.jl")
 include("update_x/hierarchical_separate.jl")
 include("update_x/hierarchical_shared.jl")
 
-include("PA/PA.jl")
+# include("PA/PA.jl")
 
 include("trixi/tools.jl")
 include("trixi/generate_data.jl")
 include("trixi/seqassim_trixi.jl")
-include("trixi/pos_preserving.jl")
 
 
 # Add equation systems
