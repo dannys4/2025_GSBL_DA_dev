@@ -1,3 +1,4 @@
+export EmpiricalCov
 using LinearMaps: _unsafe_mul!, issymmetric, ishermitian
 import LinearMaps
 using Base: size

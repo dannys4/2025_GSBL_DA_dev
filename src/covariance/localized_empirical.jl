@@ -1,3 +1,4 @@
+export LocalizedEmpiricalCov
 import LinearMaps
 
 struct LocalizedEmpiricalCov{

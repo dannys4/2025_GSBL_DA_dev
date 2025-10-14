@@ -31,6 +31,10 @@ function sol2vec(x_sol::AbstractMatrix, equations::Trixi.AbstractEquations{2,Nva
     return x_vec
 end
 
+function sol2vec(x_sol, sys::TrixiSystem; kwargs...)
+    sol2vec(x_sol, sys.equations; kwargs...)
+end
+
 function vec2sol!(
     x_sol::AbstractMatrix,
     x_vec::AbstractVector,
@@ -55,4 +59,8 @@ function vec2sol(x_vec::AbstractVector, equations::Trixi.AbstractEquations, semi
     x_sol = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(semi)...)
     vec2sol!(x_sol, x_vec, equations; g=g)
     return x_sol
+end
+
+function vec2sol(x_vec, sys::TrixiSystem)
+    vec2sol(x_vec, sys.equations, sys.semi)
 end

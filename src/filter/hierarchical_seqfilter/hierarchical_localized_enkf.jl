@@ -1,4 +1,4 @@
-export HEnKF, update_x!
+export HLocEnKF, update_x!
 
 """
 $(TYPEDEF)
@@ -11,18 +11,27 @@ References:
 $(TYPEDFIELDS)
 """
 
-struct HEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
+struct HLocEnKF{
+    ThetaT<:AbstractFlowTheta,
+    GT<:Function,
+    ET<:InflationType,
+    ObsT<:ObsConstraintSystem,
+    LT<:Localization
+} <: HierarchicalSeqFilter
     "Filter function"
-    G::Function
+    G::GT
 
     "Standard deviations of the measurement noise distribution"
-    ϵy::InflationType
+    ϵy::ET
 
     "Structure for observation and constraint"
-    sys::ObsConstraintSystem
+    sys::ObsT
+
+    "Localization structure"
+    Loc::LT
 
     "GeneralizedGamma distribution"
-    dist::GeneralizedGamma
+    dist::GeneralizedGamma{Float64}
 
     "Flow theta"
     flow::ThetaT
@@ -45,21 +54,28 @@ struct HEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
     "Boolean: is state vector filtered"
     isfiltered::Bool
 
-    "Number of optimization (IAS) steps"
+    "Number of optimization (IAS) iterations"
     Niter::Int
 
-    "Relative tolerance of IAS optimization"
+    "Optimization relative tolerance"
     rtolθ::Float64
+
+    "Initialization of θ in IAS"
+    θinit::Float64
 
     "Use Ensemble Kalman inversion while finding θ"
     useEnKIOpt::Bool
+
+    "Tolerance for Conjugate Gradient if isiterative"
+    cg_tol::Float64
 end
 
-function HEnKF(
+function HLocEnKF(
     G::Function,
     Ne::Int64,
     ϵy::InflationType,
     sys::ObsConstraintSystem,
+    Loc::Localization,
     dist::GeneralizedGamma,
     θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
@@ -68,19 +84,21 @@ function HEnKF(
     isfiltered=false,
     Niter::Int=40,
     rtolθ::Float64=1e-4,
+    θinit::Float64=1.,
     useEnKIOpt::Bool=false,
+    cg_tol=1e-6
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne=Ne)
 
-    isθshared = (θ isa Vector{Float64})
-    useEnKIOpt && @assert isθshared "If state is stochastic, must have shared θ"
+    isθshared = (θ isa Vector)
 
-    return HEnKF(
+    return HLocEnKF(
         G,
         ϵy,
         sys,
+        Loc,
         dist,
         flow,
         θ,
@@ -91,35 +109,39 @@ function HEnKF(
         isfiltered,
         Niter,
         rtolθ,
+        θinit,
         useEnKIOpt,
+        cg_tol
     )
 end
 
 # If no filtering function is provided, use the identity in the constructor.
-function HEnKF(
+function HLocEnKF(
     Ne::Int64,
     ϵy::InflationType,
     sys::ObsConstraintSystem,
+    Loc::Localization,
     dist::GeneralizedGamma,
-    θ::Vector{Float64},
+    θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
     Δtobs;
     Niter::Int=40,
     rtolθ::Float64=1e-4,
+    θinit::Float64=1.,
     useEnKIOpt::Bool=false,
+    cg_tol=1e-6
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne=Ne)
 
-
-    isθshared = true # θ isa Vector{Float64} by method definition
-    # useEnKIOpt && @assert isθshared "If state is stochastic, must have shared θ"
-
-    return HEnKF(
+    isθshared = (θ isa Vector)
+    useEnKIOpt && @assert isθshared "If state is stochastic, expected θ to be shared"
+    return HLocEnKF(
         x -> x,
         ϵy,
         sys,
+        Loc,
         dist,
         flow,
         θ,
@@ -130,17 +152,29 @@ function HEnKF(
         false,
         Niter,
         rtolθ,
+        θinit,
         useEnKIOpt,
+        cg_tol
     )
 end
 
-function Base.show(io::IO, enkf::HEnKF)
+function Base.show(io::IO, enkf::HLocEnKF)
     println(
         io,
-        "Hierarchical ensemble Kalman filter with
+        "Hierarchical localized ensemble Kalman filter with
         iterative solver = $(enkf.isiterative) and
         filtered = $(enkf.isfiltered)",
     )
 end
 
-getĈX(::HEnKF, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X[Ny+1:Ny+Nx, :]; with_matrix)
+function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix; kwargs...)
+    ĈX = getĈX(enkf, X; kwargs...)
+    ĈX_mat = Matrix(ĈX)
+    if isnothing(ĈX_mat)
+        return ĈX
+    else
+        return LinearMap(ĈX_mat)
+    end
+end
+
+getĈX(enkf::HLocEnKF, X; kwargs...) = LocalizedEmpiricalCov(X, enkf.Loc; kwargs...)
