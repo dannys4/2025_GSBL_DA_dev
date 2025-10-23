@@ -42,12 +42,7 @@ struct TrixiSystem{Eqns<:Trixi.AbstractEquations,Solver,MeshT,Semi<:Trixi.Abstra
 end
 export TrixiSystem
 
-include("tools/PA.jl")
-include("tools/smooth_periodic.jl")
-include("tools/crps.jl")
-include("tools/selection_maps.jl")
-include("tools/localization.jl")
-include("tools/viz.jl")
+include("tools/tools.jl")
 
 include("distributions/generalized_gamma.jl")
 include("distributions/extended_gamma.jl")
