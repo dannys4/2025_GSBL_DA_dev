@@ -21,6 +21,9 @@ struct HEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
     "Structure for observation and constraint"
     sys::ObsConstraintSystem
 
+    "Perturbed Observation Workspace"
+    obs_workspace::Matrix{Float64}
+
     "GeneralizedGamma distribution"
     dist::GeneralizedGamma
 
@@ -143,4 +146,4 @@ function Base.show(io::IO, enkf::HEnKF)
     )
 end
 
-getĈX(::HEnKF, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X; with_matrix)
+getĈX(::HierarchicalSeqFilter, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X; with_matrix)

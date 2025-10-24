@@ -1,6 +1,6 @@
 export update_θ!
 
-function update_θ!(enkf, X, θ::Vector{Float64}, ystar, t, verbose::Bool)
+function update_θ!(enkf, X, θ::Vector{Float64}, verbose::Bool)
     s = zero(θ)
     # We need to compute the sum of the square
     for i = axes(X, 2)
@@ -16,7 +16,7 @@ function update_θ!(enkf, X, θ::Vector{Float64}, ystar, t, verbose::Bool)
     end
 end
 
-function update_θ!(enkf, X, θ::Matrix{Float64}, ystar, t, verbose::Bool)
+function update_θ!(enkf, X, θ::Matrix{Float64}, verbose::Bool)
     Ne = size(X, 2)
     Ns = size(θ, 1)
 

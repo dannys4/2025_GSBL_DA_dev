@@ -4,8 +4,23 @@ function (enkf::HierarchicalSeqFilter)(
     t::Float64,
     verbose::Bool
 )
+    Ny = length(ystar)
+    Ne = size(X_forecast, 2)
+
     X_analysis = deepcopy(X_forecast)
     X_forecast_loop = enkf.useEnKIOpt ? X_analysis : X_forecast
+
+    perturbed_obs = enkf.obs_workspace
+    @assert size(perturbed_obs) == (Ny, Ne)
+    randn!(perturbed_obs)
+    # Generate observational noise samples
+    if enkf.ϵy isa AdditiveInflation
+        lmul!(enkf.ϵy.σ, perturbed_obs)
+        if has_nonzero_mean(enkf.ϵy)
+            perturbed_obs .-= enkf.ϵy.m
+        end
+        perturbed_obs .+= ystar
+    end
 
     # workspace_sparsity = findall(isnan, enkf.sys.H' * fill(NaN, size(enkf.sys.H, 1)))
     verbose && @info "Getting Covariance..."
@@ -22,11 +37,11 @@ function (enkf::HierarchicalSeqFilter)(
             verbose && @info "θ copied"
 
             # Update x
-            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
+            update_x!(enkf, X_forecast_loop, perturbed_obs, ĈX_op, enkf.θ, t, X_analysis, verbose)
 
             verbose && @info "x updated"
             # Update theta
-            update_θ!(enkf, X_analysis, enkf.θ, ystar, t, verbose)
+            update_θ!(enkf, X_analysis, enkf.θ, verbose)
 
             if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
                 break
@@ -40,10 +55,10 @@ function (enkf::HierarchicalSeqFilter)(
             copy!(θold, enkf.θ)
 
             # Update theta
-            update_θ!(enkf, X_analysis, enkf.θ, ystar, t; verbose)
+            update_θ!(enkf, X_analysis, enkf.θ, verbose)
 
             # Update x
-            update_x!(enkf, X_forecast_loop, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
+            update_x!(enkf, X_forecast_loop, perturbed_obs, ĈX_op, enkf.θ, t, X_analysis, verbose)
 
             if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
                 break
@@ -51,6 +66,6 @@ function (enkf::HierarchicalSeqFilter)(
         end
     end
     verbose && @info "Finished optimization loop."
-    update_x!(enkf, X_forecast, ĈX_op, enkf.θ, ystar, t, X_analysis, verbose)
+    update_x!(enkf, X_forecast, perturbed_obs, ĈX_op, enkf.θ, t, X_analysis, verbose)
     return X_analysis, enkf.θ
 end

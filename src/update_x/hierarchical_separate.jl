@@ -4,7 +4,7 @@ function update_x!(
     enkf::HierarchicalSeqFilter,
     X_forecast,
     θ::Matrix{Float64},
-    ystar::Vector{Float64},
+    perturbed_obs::Matrix{Float64},
     t,
     X_analysis,
     verbose::Bool
@@ -18,13 +18,14 @@ function update_x!(
 
     @assert size(θ, 1) == Ns
     @assert size(θ, 2) == Ne
-    @assert size(ystar, 1) == Ny
+    @assert size(perturbed_obs, 1) == Ny
+    @assert size(perturbed_obs, 2) == Ne
 
     # Generate observational noise samples
-    E = zeros(Ny, Ne)
-    if enkf.ϵy isa AdditiveInflation
-        E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
-    end
+    # E = zeros(Ny, Ne)
+    # if enkf.ϵy isa AdditiveInflation
+    #     E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
+    # end
 
     si = zeros(enkf.sys.Ns)
 
@@ -38,7 +39,7 @@ function update_x!(
     )
 
     # Update covariance matrix
-    enkf.sys.CX[1] = ĈX_op
+    enkf.sys.CX = ĈX_op
 
     enkf.sys.Cθ isa LinearMaps.LinearMaps.WrappedMap{Float64} || throw(ArgumentError("Wrong type of theta!"))
 
@@ -48,24 +49,17 @@ function update_x!(
         issymmetric=true,
         isposdef=true,
     )
+
     if X_forecast !== X_analysis
-        copy!(view(X_analysis, Ny+1:Ny+Nx, :), view(X_forecast, Ny+1:Ny+Nx, :))
+        copy!(X_analysis, X_forecast)
     end
 
+    if !enkf.isiterative
+        sys_mat = factorize(Symmetric(Matrix(sys_op)))
+    end
+
+
     for i = 1:Ne
-        if !enkf.isiterative
-            sys_mat = zeros(Ny + Ns, Ny + Ns)
-
-            ei = zeros(Ny + Ns)
-            for i = 1:Ny+Ns
-                fill!(ei, 0.0)
-                ei[i] = 1.0
-                sys_mat[:, i] .= sys_op * ei
-            end
-
-            sys_mat = factorize(Symmetric(sys_mat))
-        end
-
         # Compute Kalman-update in a matrix-free way
 
         ys_i = ObsConstraintVector(Ny, Ns)
@@ -73,27 +67,27 @@ function update_x!(
 
         δi = zeros(Nx)
 
-        xi = view(X_analysis, Ny+1:Ny+Nx, i)
+        xi = @view X_analysis[:, i]
+        obs_i = @view perturbed_obs[:, i]
         yi = observation(ys_i)
         si = constraint(ys_i)
 
-        mul!(yi, enkf.sys.H, xi)
-        @assert isapprox(ys_i.x[1], enkf.sys.H * xi, atol=1e-8)
-
-        yi .+= E[:, i] - ystar
+        copy!(yi, obs_i)
+        mul!(yi, enkf.sys.H, xi, -1, true)
+        # @assert isapprox(ys_i.x[1], enkf.sys.H * xi, atol=1e-8)
 
         mul!(si, enkf.sys.S, xi)
 
         if enkf.isiterative
             # Invert sys_op
-            cg!(ys_i, sys_op, copy(ys_i); log=false, reltol=1e-3)
+            cg!(ys_i, sys_op, copy(ys_i); log=false, reltol=enkf.cg_tol)
         else
-            ldiv!(ys_i, sys_mat, ys_i)
+            ldiv!(sys_mat, ys_i)
         end
 
         δi .= enkf.sys.H' * observation(ys_i)
         δi .+= enkf.sys.S' * constraint(ys_i)
 
-        xi .-= (ĈX * δi)
+        xi .+= (ĈX * δi)
     end
 end

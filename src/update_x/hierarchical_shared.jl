@@ -1,11 +1,11 @@
-# In this version, there is a jump coefficient θ shared across the eNzemble members
+# In this version, there is a jump coefficient θ shared across the ensemble members
 
 function update_x!(
     enkf::HierarchicalSeqFilter,
     X_forecast,
+    perturbed_obs::Matrix{Float64},
     ĈX_op,
     θ::Vector{Float64},
-    ystar::Vector{Float64},
     t,
     X_analysis,
     verbose::Bool
@@ -18,27 +18,15 @@ function update_x!(
         ArgumentError("Wrong type for Cθ")
     end
 
-    Ny = size(ystar, 1)
+    Ny = size(perturbed_obs, 1)
     Nx = size(X_forecast, 1)
     Ne = size(X_forecast, 2)
     Ne = size(X_forecast, 2)
     Nz = enkf.sys.Nz
 
     @assert size(θ, 1) == Nz
-    @assert size(ystar, 1) == Ny
+    @assert size(perturbed_obs, 2) == Ne
 
-    # Generate observational noise samples
-    errs = repeat(ystar, 1, Ne)
-    if enkf.ϵy isa AdditiveInflation
-        if has_nonzero_mean(enkf.ϵy)
-            errs .-= enkf.ϵy.m
-        end
-        errs_samp = zeros(Ny)
-        for j in axes(errs, 2)
-            randn!(errs_samp)
-            mul!(@view(errs[:, j]), enkf.ϵy.σ, errs_samp, true, true)
-        end
-    end
     verbose && @info "noise sampled"
 
     # Update covariance matrix
@@ -48,6 +36,7 @@ function update_x!(
     verbose && @info "theta copied"
     copy!(enkf.sys.Cθ.lmap.diag, θ)
     verbose && @info "Getting sys op"
+
     if enkf.isiterative
         sys_op = enkf.sys
         precond = Diagonal(sys_op)
@@ -75,8 +64,8 @@ function update_x!(
         yi = observation(ys_i)
         si = constraint(ys_i)
 
-        err_i = @view errs[:, i]
-        yi .= err_i - enkf.sys.H * xi_forecast
+        obs_i = @view perturbed_obs[:, i]
+        yi .= obs_i - enkf.sys.H * xi_forecast
         si .= -enkf.sys.S * xi_forecast
         copy!(tmp, ys_i)
         verbose && @info "Start solve"

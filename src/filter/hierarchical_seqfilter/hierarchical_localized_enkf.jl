@@ -12,11 +12,11 @@ $(TYPEDFIELDS)
 """
 
 struct HLocEnKF{
+    LT<:Union{<:Localization,Nothing},
     ThetaT<:AbstractFlowTheta,
     GT<:Function,
     ET<:InflationType,
     ObsT<:ObsConstraintSystem,
-    LT<:Localization
 } <: HierarchicalSeqFilter
     "Filter function"
     G::GT
@@ -29,6 +29,9 @@ struct HLocEnKF{
 
     "Localization structure"
     Loc::LT
+
+    "Perturbed observation workspace"
+    obs_workspace::Matrix{Float64}
 
     "GeneralizedGamma distribution"
     dist::GeneralizedGamma{Float64}
@@ -89,7 +92,7 @@ function HLocEnKF(
     cg_tol=1e-6
 )
     # @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
-
+    obs_workspace = Matrix{Float64}(undef, sys.Ny, Ne)
     flow = FlowTheta(dist; Ne=Ne)
 
     isθshared = (θ isa Vector)
@@ -99,6 +102,7 @@ function HLocEnKF(
         ϵy,
         sys,
         Loc,
+        obs_workspace,
         dist,
         flow,
         θ,
@@ -134,6 +138,7 @@ function HLocEnKF(
     # @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     flow = FlowTheta(dist; Ne=Ne)
+    obs_workspace = Matrix{Float64}(undef, sys.Ny, Ne)
 
     isθshared = (θ isa Vector)
     useEnKIOpt && @assert isθshared "If state is stochastic, expected θ to be shared"
@@ -142,6 +147,7 @@ function HLocEnKF(
         ϵy,
         sys,
         Loc,
+        obs_workspace,
         dist,
         flow,
         θ,
@@ -177,4 +183,4 @@ function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix; kwargs...)
     end
 end
 
-getĈX(enkf::HLocEnKF, X; kwargs...) = LocalizedEmpiricalCov(X, enkf.Loc; kwargs...)
+getĈX(enkf::HLocEnKF{<:Localization}, X; kwargs...) = LocalizedEmpiricalCov(X, enkf.Loc; kwargs...)
