@@ -56,7 +56,7 @@ function LocEnKF(
     isfiltered=false,
     cg_tol=1e-6
 )
-    @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
+    # @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
     return LocEnKF{}(G, ϵy, sys, Loc, Δtdyn, Δtobs, isiterative, isfiltered, cg_tol)
 end

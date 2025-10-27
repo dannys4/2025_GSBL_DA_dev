@@ -64,9 +64,12 @@ end
 nz_iterator(x::AbstractVector) = zip(eachindex(x), x)
 nz_iterator(x::SparseVector) = zip(x.nzind, x.nzval)
 
+get_matrix(X::LinearMaps.WrappedMap) = X.lmap
+get_matrix(X::AbstractMatrix) = X
+
 function __inner_prod(C::LocalizedEmpiricalCov, u::AbstractVector)
     ret = zero(eltype(u))
-    localization_mat = C.Loc.ρX.lmap
+    localization_mat = get_matrix(C.Loc.ρX)
     ret = Vector{Float64}(undef, C.Ne)
     tmp = similar(u, Float64)
     for ens_idx in 1:C.Ne

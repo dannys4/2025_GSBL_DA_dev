@@ -65,6 +65,10 @@ end
 
 LinearMaps.MulStyle(::SelectionMap) = FiveArg()
 
+"""
+    SelectionMap(idxs, selection::Symbol; in_size=maximum(idxs), _::Type = Float64)
+Creates a selection map: if selection==:out,  y <- x[idxs]. If selection==:in,  y[idxs] <- x
+"""
 function SelectionMap(idxs::V, selection::Symbol; in_size=maximum(idxs), _::Type{T}=Float64) where {V,T}
     @assert selection in (:in, :out) "Can only select in or out"
     @assert maximum(idxs) <= in_size && all(>(0), idxs)
