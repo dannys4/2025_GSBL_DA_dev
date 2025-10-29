@@ -55,7 +55,7 @@ function get_plot_ensemble(ensemble::Matrix{Float64}, sys::TrixiSystem)
         data = map(x -> sys.dg.basis.Vp * x,
             StructArrays.components(cons2prim.(member_itp, sys.equations))
         )
-        data_plot = reduce(hcat, vec.(data))
+        data_plot = reshape(reduce(hcat, vec.(data)), :, Nvar)
         copy!(@view(ensemble_plot[:, :, ens_idx]), data_plot)
     end
     x_plot, ensemble_plot
