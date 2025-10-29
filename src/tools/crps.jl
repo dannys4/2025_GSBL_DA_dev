@@ -1,4 +1,4 @@
-export CRPS_gaussian, CRPS_quadrature, CRPS, weight_sum_reduction
+export CRPS_gaussian, CRPS_quadrature, CRPS, weight_sum_reduction, dist_weight_sum_reduction
 
 """
 CRPS calculation for a univariate Gaussian distribution
@@ -88,10 +88,18 @@ function CRPS(X::AbstractVector{<:AbstractMatrix}, truth::AbstractMatrix, space_
     end
 end
 
-function weight_sum_reduction(x::AbstractVector, fcn::Function, weights::AbstractVector=fill(1 / length(x), length(x)))
-    d = length(x)
-    @assert length(weights) == d
+function weight_sum_reduction(fcn::Function, x::AbstractArray, weights::AbstractArray=fill(1 / length(x), size(x)))
+    @assert size(x) == size(weights)
     return sum(zip(x, weights)) do (x_elem, wt_elem)
         fcn(x_elem) * wt_elem
+    end
+end
+
+
+function dist_weight_sum_reduction(fcn::Function, x::AbstractArray, y::AbstractArray, weights::AbstractArray=fill(1 / length(x), size(x)))
+    @assert size(x) == size(weights)
+    @assert size(x) == size(y)
+    return sum(zip(x, y, weights)) do (x_elem, y_elem, wt_elem)
+        fcn(x_elem - y_elem) * wt_elem
     end
 end

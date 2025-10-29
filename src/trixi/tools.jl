@@ -1,9 +1,35 @@
-export get_plot_ensemble, ensemble_to_itp
+export get_plot_ensemble, ensemble_to_itp, ensemble_to_quad, get_filter_quad_pts
 include("tools/grid_from_mesh.jl")
 include("tools/mesh2d.jl")
 include("tools/node_transfer.jl")
 include("tools/pos_preserving.jl")
 include("tools/vec2sol.jl")
+
+function get_filter_quad_pts(ensemble, sys::TrixiSystem)
+    ens_quad = ensemble_to_quad(ensemble, sys, g=(x, _) -> identity(x))
+    if eltype(ens_quad) <: AbstractVector
+        Nvar = nvariables(sys.equations)
+        ens_quad_ret = Matrix{Float64}(undef, Nvar, length(ens_quad))
+        for quad_idx in eachindex(ens_quad)
+            quad_val = ens_quad[quad_idx]
+            for var_idx in 1:Nvar
+                ens_quad_ret[var_idx, quad_idx] = quad_val[var_idx]
+            end
+        end
+        ens_quad = reshape(ens_quad_ret, Nvar, size(ens_quad)...)
+    end
+    ens_quad
+end
+
+function ensemble_to_quad(ensemble, sys::TrixiSystem; vec2sol_kwargs...)
+    x_quad = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
+    x_ens_quad = similar(x_quad, (size(x_quad)..., size(ensemble, 2)))
+    for ens_idx in axes(ensemble, 2)
+        vec2sol!(x_quad, @view(ensemble[:, ens_idx]), sys.equations; vec2sol_kwargs...)
+        copy!(selectdim(x_ens_quad, ndims(x_ens_quad), ens_idx), x_quad)
+    end
+    x_ens_quad
+end
 
 function ensemble_to_itp(ensemble, sys::TrixiSystem)
     x_quad = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(sys.semi)...)
