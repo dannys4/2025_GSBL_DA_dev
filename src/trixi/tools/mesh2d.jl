@@ -96,50 +96,61 @@ gaspari2D(offset_x, offset_y, radius) = gaspari(2 * sqrt(abs2(offset_x) + abs2(o
 
 function LocalizationMatrix2D(
     mesh::DGMultiMesh{2,Trixi.Affine},
-    local_radius::Int,
-    kernel::Function,
-    isperiodic::Bool)
+    local_radius,
+    metric::Function,
+    isperiodic::Bool
+)
 
     N_cells = get_square_mesh_N_cells(mesh)
-    yq = mesh.md.yq
+    (; xq, yq) = mesh.md
+    cell_size = maximum(diff(sort(unique(mesh.md.VX))))
+    max_elem_radius = ceil(Int, local_radius / cell_size)
     polydeg = Int(sqrt(size(yq, 1))) - 1
+    xq, yq = [reshape(tq, polydeg + 1, polydeg + 1, N_cells, N_cells) for tq in (xq, yq)]
+    indices = LinearIndices(xq)
     # @assert local_radius <= polydeg + 1 "Currently only supports radius that is below polynomial degree. Got $local_radius > $(polydeg+1)"
-    indices = reshape(LinearIndices(yq), polydeg + 1, polydeg + 1, N_cells, N_cells)
 
     # How many elements over the index is
     get_elem_offset(idx) = sign(idx - 1) * ((idx < 1) + (abs(idx) - (idx > polydeg)) ÷ (polydeg + 1))
     rows, cols, vals = Int[], Int[], Float64[]
-    @showprogress for (node_matrix_row_idx, c_idx) in enumerate(CartesianIndices(indices))
-        elem_row_idx, elem_col_idx, global_row_idx, global_col_idx = Tuple(c_idx)
-        for location_offset in CartesianIndices((-local_radius:local_radius, -local_radius:local_radius))
-            row_offset_rad, col_offset_rad = Tuple(location_offset)
-            row_offset = elem_row_idx + row_offset_rad
-            col_offset = elem_col_idx + col_offset_rad
-            # Find where the neighbor is within the element
-            row_elem_neigh = mod1(row_offset, polydeg + 1)
-            col_elem_neigh = mod1(col_offset, polydeg + 1)
-            # Find which element the neighbor belongs to
-            row_global_neigh = global_row_idx + get_elem_offset(row_offset)
-            col_global_neigh = global_col_idx + get_elem_offset(col_offset)
+    shap_idxs = CartesianIndices((1:(polydeg+1), 1:(polydeg+1)))
+    @showprogress for elem_idx in CartesianIndices((1:N_cells, 1:N_cells))
+        elem_idx_x, elem_idx_y = Tuple(elem_idx)
+        # x_row, y_row = xq[node_matrix_row_idx], yq[node_matrix_row_idx]
+        for elem_offset in CartesianIndices((-max_elem_radius:max_elem_radius, -max_elem_radius:max_elem_radius))
+            elem_offset_x, elem_offset_y = Tuple(elem_offset)
+            elem_neigh_idx_x, elem_neigh_idx_y = elem_offset_x + elem_idx_x, elem_offset_y + elem_idx_y
 
             if !isperiodic # If not periodic, check if we step over the bounds
-                invalid_row = row_global_neigh > N_cells || row_global_neigh < 1
-                invalid_col = col_global_neigh > N_cells || col_global_neigh < 1
+                invalid_row = elem_neigh_idx_x > N_cells || elem_neigh_idx_x < 1
+                invalid_col = elem_neigh_idx_y > N_cells || elem_neigh_idx_y < 1
                 (invalid_row || invalid_col) && continue
             end
-            # Wrap around for periodicity
-            row_global_neigh = mod1(row_global_neigh, N_cells)
-            col_global_neigh = mod1(col_global_neigh, N_cells)
-            # Get the neighbor's node index in the global matrix
-            node_idx_neigh = indices[row_elem_neigh, col_elem_neigh, row_global_neigh, col_global_neigh]
-            # Calculate the value for the localization
-            val = kernel(row_offset_rad, col_offset_rad)
-            push!(rows, node_matrix_row_idx)
-            push!(cols, node_idx_neigh)
-            push!(vals, val)
+
+            elem_neigh_idx_x = mod1(elem_neigh_idx_x, N_cells)
+            elem_neigh_idx_y = mod1(elem_neigh_idx_y, N_cells)
+
+            for shap_row_idx in shap_idxs
+                shap_row_idx_x, shap_row_idx_y = Tuple(shap_row_idx)
+                row_c_idx = CartesianIndex(shap_row_idx_x, shap_row_idx_y, elem_idx_x, elem_idx_y)
+                row_idx = indices[row_c_idx]
+                x_row, y_row = xq[row_idx], yq[row_idx]
+                for shap_neigh_idx in shap_idxs
+                    shap_neigh_idx_x, shap_neigh_idx_y = Tuple(shap_neigh_idx)
+                    col_c_idx = CartesianIndex(shap_neigh_idx_x, shap_neigh_idx_y, elem_neigh_idx_x, elem_neigh_idx_y)
+                    col_idx = indices[col_c_idx]
+                    x_col, y_col = xq[col_idx], yq[col_idx]
+                    x_dist, y_dist = metric(x_row, x_col), metric(y_row, y_col)
+                    dist = sqrt(x_dist^2 + y_dist^2)
+                    val = gaspari(dist / local_radius)
+                    push!(rows, row_idx)
+                    push!(cols, col_idx)
+                    push!(vals, val)
+                end
+            end
         end
     end
-    return rows, cols, vals
+    rows, cols, vals
 end
 
 function block_toeplitz_tridiag(matrix, block_size)
@@ -162,12 +173,12 @@ Determine the localization via a kernel(dx, dy). Defaults to a gaspari-cohn kern
 """
 function TransportBasedInference2.Localization(
     mesh::DGMultiMesh{2,Trixi.Affine},
-    local_radius::Int;
-    kernel::Function=(x, y) -> gaspari2D(x, y, local_radius),
+    local_radius,
+    metric::Function;
     isperiodic=true,
     Nvar::Int=1
 )
-    rows, cols, vals = LocalizationMatrix2D(mesh, local_radius, kernel, isperiodic)
+    rows, cols, vals = LocalizationMatrix2D(mesh, local_radius, metric, isperiodic)
     loc = sparse(rows, cols, vals)
     dropzeros!(loc)
     if isperiodic
@@ -191,9 +202,10 @@ end
 
 TransportBasedInference2.Localization(
     sys::TrixiSystem,
-    local_radius::Int;
+    local_radius,
+    metric;
     kwargs...
-) = Localization(sys.mesh, local_radius; kwargs...)
+) = Localization(sys.mesh, local_radius, metric; kwargs...)
 
 function create_observation_operator2d(mesh::DGMultiMesh{2}, spacing::Int, offset::Int)
     @assert offset < spacing
