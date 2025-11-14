@@ -28,7 +28,7 @@ function HierarchicalDA.trixiheatmaps(itps, titles, sys::TrixiSystem; variable="
         TrixiMakie.trixiheatmap!(axs[j], pd_sols[j]; plot_mesh, colorrange)
     end
     Colorbar(fig[1, end+1]; colorrange)
-    fig
+    fig, axs
 end
 
 end # module
