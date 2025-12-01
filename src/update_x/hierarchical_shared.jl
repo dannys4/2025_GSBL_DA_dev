@@ -11,7 +11,6 @@ function update_x!(
     verbose::Bool
 )
     verbose && @info "x being updated"
-    @assert enkf.isθshared
 
     # Update weight vector θ
     if !(enkf.sys.Cθ isa LinearMaps.LinearMaps.WrappedMap{Float64})

@@ -14,6 +14,7 @@ $(TYPEDFIELDS)
 struct HLocEnKF{
     LT<:Union{<:Localization,Nothing},
     ThetaT<:AbstractFlowTheta,
+    ThetaSpaceT<:Union{Vector{Float64},Matrix{Float64}},
     GT<:Function,
     ET<:InflationType,
     ObsT<:ObsConstraintSystem,
@@ -39,17 +40,14 @@ struct HLocEnKF{
     "Flow theta"
     flow::ThetaT
 
-    "Penalization coefficients θ associated with the regularization term"
-    θ::Vector{Float64}
+    "Penalization coefficients θ associated with the regularization term. Vector if shared, Matrix if not"
+    θ::ThetaSpaceT
 
     "Time step dynamic"
     Δtdyn::Float64
 
     "Time step observation"
     Δtobs::Float64
-
-    "Boolean: is θ shared"
-    isθshared::Bool
 
     "Boolean: is the linear system solved with an iterative solver"
     isiterative::Bool
@@ -93,9 +91,11 @@ function HLocEnKF(
 )
     # @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
     obs_workspace = Matrix{Float64}(undef, sys.Ny, Ne)
-    flow = FlowTheta(dist; Ne=Ne)
 
-    isθshared = (θ isa Vector)
+    is_θ_shared = θ isa Vector{Float64}
+    flow = FlowTheta(dist; Ne=is_θ_shared ? Ne : 1)
+
+    useEnKIOpt && @assert (is_θ_shared) "If state is stochastic, must have shared θ"
 
     return HLocEnKF(
         G,
@@ -129,21 +129,22 @@ function HLocEnKF(
     θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
     Δtobs;
-    Niter::Int=40,
+    Niter::Int=10,
     rtolθ::Float64=1e-4,
     θinit::Float64=1.,
     useEnKIOpt::Bool=false,
     cg_tol=1e-6
 )
     # @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
-
-    flow = FlowTheta(dist; Ne=Ne)
     obs_workspace = Matrix{Float64}(undef, sys.Ny, Ne)
 
-    isθshared = (θ isa Vector)
-    useEnKIOpt && @assert isθshared "If state is stochastic, expected θ to be shared"
+    is_θ_shared = θ isa Vector{Float64}
+    flow = FlowTheta(dist; Ne=is_θ_shared ? Ne : 1)
+
+    useEnKIOpt && @assert is_θ_shared "If state is stochastic, must have shared θ"
+
     return HLocEnKF(
-        x -> x,
+        identity,
         ϵy,
         sys,
         Loc,
@@ -153,7 +154,6 @@ function HLocEnKF(
         θ,
         Δtdyn,
         Δtobs,
-        isθshared,
         false,
         false,
         Niter,
@@ -171,16 +171,6 @@ function Base.show(io::IO, enkf::HLocEnKF)
         iterative solver = $(enkf.isiterative) and
         filtered = $(enkf.isfiltered)",
     )
-end
-
-function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix; kwargs...)
-    ĈX = getĈX(enkf, X; kwargs...)
-    ĈX_mat = Matrix(ĈX)
-    if isnothing(ĈX_mat)
-        return ĈX
-    else
-        return LinearMap(ĈX_mat)
-    end
 end
 
 getĈX(enkf::HLocEnKF{<:Localization}, X; kwargs...) = LocalizedEmpiricalCov(X, enkf.Loc; kwargs...)

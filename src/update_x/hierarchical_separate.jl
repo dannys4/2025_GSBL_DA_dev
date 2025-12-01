@@ -1,4 +1,4 @@
-# In this version, there is a jump coefficient θ shared across the ensemble members
+# In this version, there is a jump coefficient θ for each ensemble member
 
 function update_x!(
     enkf::HierarchicalSeqFilter,
@@ -11,7 +11,6 @@ function update_x!(
     verbose::Bool
 )
     verbose && @info "x being updated"
-    @assert enkf.isθshared
 
     # Update weight vector θ
     if !(enkf.sys.Cθ isa LinearMaps.LinearMaps.WrappedMap{Float64})
@@ -33,27 +32,22 @@ function update_x!(
     enkf.sys.CX = ĈX_op
     verbose && @info "CX copied"
 
-    # copy!(enkf.θ, θ)
-    fill!(enkf.θ, 0.)
-    # verbose && @info "theta copied"
-    # copy!(enkf.sys.Cθ.lmap.diag, θ)
     fill!(enkf.sys.Cθ.lmap.diag, 0.)
-    # verbose && @info "Getting sys op"
 
     if enkf.isiterative
         sys_op = enkf.sys
         precond = Diagonal(sys_op)
-        cg_out = zeros(length(ys_i))
     else
-        sys_mat = Matrix(enkf.sys)
-        sys_fac = similar(sys_mat)
-        diag_theta_fac = diagind(sys_fac)[end-Nz+1:end]
+        sys_mat = Hermitian(Matrix(enkf.sys))
+        diag_theta_idx = diagind(sys_mat)[end-Nz+1:end]
+        sys_mat_ref = sys_mat[diag_theta_idx]
     end
     verbose && @info "Got sys op"
 
     # Compute Kalman-update in a matrix-free way
     ys_i = ObsConstraintVector(Ny, Nz)
     tmp = zeros(length(ys_i))
+    solve_out = similar(tmp)
 
     δi = zeros(Nx)
 
@@ -67,29 +61,34 @@ function update_x!(
         fill!(δi, zero(eltype(δi)))
         xi_forecast = @view X_forecast[:, i]
         xi_analysis = @view X_analysis[:, i]
+
+        θi = @view θ[:, i]
         yi = observation(ys_i)
         si = constraint(ys_i)
 
         obs_i = @view perturbed_obs[:, i]
-        # yi .= obs_i - enkf.sys.H * xi_forecast
-        # si .= -enkf.sys.S * xi_forecast
+
         copy!(yi, obs_i)
         mul!(yi, enkf.sys.H, xi_forecast, -1, true)
         mul!(si, enkf.sys.S, xi_forecast, -1, false)
         copy!(tmp, ys_i)
+
         verbose && @info "Start solve"
+
         if enkf.isiterative
-            copy!(enkf.sys.Cθ.lmap.diag, @view(θ[:, i]))
+            copy!(enkf.sys.Cθ.lmap.diag, θi)
             # Invert sys_op
-            cg!(cg_out, sys_op, tmp; log=false, verbose=false, reltol=enkf.cg_tol, Pl=precond)
-            copy!(ys_i, cg_out)
+            cg!(solve_out, sys_op, tmp; log=false, verbose=false, reltol=enkf.cg_tol, Pl=precond)
+            copy!(ys_i, solve_out)
         else
-            copy!(sys_fac, sys_mat)
-            sys_fac[diag_theta_fac] .+= @view θ[:, i]
-            fac = bunchkaufman!(sys_fac)
-            ldiv!(fac, tmp)
-            copy!(ys_i, tmp)
+            for (diag_idx, mat_idx) in enumerate(diag_theta_idx)
+                sys_mat[mat_idx] = sys_mat_ref[diag_idx] + θi[diag_idx]
+            end
+            # Not worth factorizing because matrix changes.
+            solve_out .= sys_mat \ tmp
+            copy!(ys_i, solve_out)
         end
+
         # δi .= enkf.sys.H' * observation(ys_i) + enkf.sys.S' * constraint(ys_i)
         # xi_analysis .= xi_analysis + ĈX_op * δi
         mul!(δi, enkf.sys.H', observation(ys_i))

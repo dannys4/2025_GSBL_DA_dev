@@ -21,15 +21,14 @@ function update_θ!(enkf, X, θ::Matrix{Float64}, verbose::Bool)
     Ns = size(θ, 1)
 
     # Make sure that the flow is computed correctly
-
-    s = zeros(Ns)
+    sqrt_s = zeros(Ns)
 
     # We need to compute the square of each component of S x
     for i = 1:Ne
         X_i = @view X[:, i]
-        s .= (enkf.sys.S * X_i) .^ 2
+        mul!(sqrt_s, enkf.sys.S, X_i)
         for j = 1:Ns
-            θ[j, i] = enkf.flow.ϑ * enkf.flow(√(s[j] / enkf.flow.ϑ))
+            θ[j, i] = enkf.flow.ϑ * enkf.flow(abs(sqrt_s[j]) / sqrt(enkf.flow.ϑ))
         end
     end
 end

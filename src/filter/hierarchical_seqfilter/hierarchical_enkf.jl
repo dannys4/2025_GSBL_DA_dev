@@ -11,7 +11,11 @@ References:
 $(TYPEDFIELDS)
 """
 
-struct HEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
+struct HEnKF{
+    ThetaT<:AbstractFlowTheta,
+    ThetaSpaceT<:Union{Vector{Float64},Matrix{Float64}}
+} <: HierarchicalSeqFilter
+
     "Filter function"
     G::Function
 
@@ -31,16 +35,13 @@ struct HEnKF{ThetaT<:AbstractFlowTheta} <: HierarchicalSeqFilter
     flow::ThetaT
 
     "Penalization coefficients θ associated with the regularization term"
-    θ::Vector{Float64}
+    θ::ThetaSpaceT
 
     "Time step dynamic"
     Δtdyn::Float64
 
     "Time step observation"
     Δtobs::Float64
-
-    "Boolean: is θ shared"
-    isθshared::Bool
 
     "Boolean: is the linear system solved with an iterative solver"
     isiterative::Bool
@@ -75,10 +76,10 @@ function HEnKF(
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
-    flow = FlowTheta(dist; Ne=Ne)
+    is_θ_shared = θ isa Vector{Float64}
+    flow = FlowTheta(dist; Ne=is_θ_shared ? Ne : 1)
 
-    isθshared = (θ isa Vector{Float64})
-    useEnKIOpt && @assert isθshared "If state is stochastic, must have shared θ"
+    useEnKIOpt && @assert (is_θ_shared) "If state is stochastic, must have shared θ"
 
     return HEnKF(
         G,
@@ -89,7 +90,6 @@ function HEnKF(
         θ,
         Δtdyn,
         Δtobs,
-        isθshared,
         isiterative,
         isfiltered,
         Niter,
@@ -104,7 +104,7 @@ function HEnKF(
     ϵy::InflationType,
     sys::ObsConstraintSystem,
     dist::GeneralizedGamma,
-    θ::Vector{Float64},
+    θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
     Δtobs;
     Niter::Int=40,
@@ -113,14 +113,13 @@ function HEnKF(
 )
     @assert modfloat(Δtobs, Δtdyn) "Δtobs should be an integer multiple of Δtdyn"
 
-    flow = FlowTheta(dist; Ne=Ne)
+    is_θ_shared = θ isa Vector{Float64}
+    flow = FlowTheta(dist; Ne=is_θ_shared ? Ne : 1)
 
-
-    isθshared = true # θ isa Vector{Float64} by method definition
-    # useEnKIOpt && @assert isθshared "If state is stochastic, must have shared θ"
+    useEnKIOpt && @assert is_θ_shared "If state is stochastic, must have shared θ"
 
     return HEnKF(
-        x -> x,
+        identity,
         ϵy,
         sys,
         dist,
@@ -128,7 +127,6 @@ function HEnKF(
         θ,
         Δtdyn,
         Δtobs,
-        isθshared,
         false,
         false,
         Niter,
@@ -146,4 +144,4 @@ function Base.show(io::IO, enkf::HEnKF)
     )
 end
 
-getĈX(::HierarchicalSeqFilter, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X; with_matrix)
+getĈX(::HEnKF, X, Nx, Ny; with_matrix=true) = EmpiricalCov(X; with_matrix)

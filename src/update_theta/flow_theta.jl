@@ -29,15 +29,15 @@ function FlowTheta(dist::GeneralizedGamma; Ne=1, t0=0, tf=1e6)
     β = dist.β
     ϑ = dist.ϑ
 
-    # if r == -1
-    #     denom = 2 * (1 + β) + Ne
-    #     return NegGammaFlowTheta(denom, ϑ)
-    # end
+    if r == -1
+        denom = 2 * (1 + β) + Ne
+        return NegGammaFlowTheta(denom, ϑ)
+    end
 
-    η = r * β - (Ne + 2) / 2
+    η = r * β - (1 + (Ne / 2))
 
     # Check conditions for validity of ODE approach
-    if r < 0 || r > (1 + Ne / 2) / β
+    if r < 0 || r > (1 + (Ne / 2)) / β
         ArgumentError("The ODE approach is not valid in this setting")
     end
 

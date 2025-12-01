@@ -30,7 +30,7 @@ function seqassim_trixi(
     push!(statehist, copy(X))
 
     if algo isa HierarchicalSeqFilter
-        θhist = Vector{Float64}[]
+        θhist = isθshared(algo) ? Vector{Float64}[] : Matrix{Float64}[]
         push!(θhist, algo.θ)
     end
 

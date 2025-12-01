@@ -1,3 +1,15 @@
+function getĈX_op(enkf::HierarchicalSeqFilter, X::AbstractMatrix; kwargs...)
+    ĈX = getĈX(enkf, X; kwargs...)
+    ĈX_mat = Matrix(ĈX)
+    if isnothing(ĈX_mat)
+        return ĈX
+    else
+        return LinearMap(ĈX_mat)
+    end
+end
+
+isθshared(enkf::HierarchicalSeqFilter) = enkf.θ isa Vector{Float64}
+
 function (enkf::HierarchicalSeqFilter)(
     X_forecast,
     ystar::Vector{Float64},
@@ -26,43 +38,25 @@ function (enkf::HierarchicalSeqFilter)(
     verbose && @info "Getting Covariance..."
     ĈX_op = getĈX(enkf, X_forecast; with_matrix=!enkf.isiterative)
 
-    if enkf.isθshared
-        # Initial guess?
-        fill!(enkf.θ, enkf.θinit)
+    # Initial guess?
+    fill!(enkf.θ, enkf.θinit)
 
-        θold = zero(enkf.θ)
-        for i = 1:enkf.Niter
-            verbose && @info "IAS Optimization i = $i"
-            copy!(θold, enkf.θ)
-            verbose && @info "θ copied"
+    θold = zero(enkf.θ)
+    for i = 1:enkf.Niter
+        verbose && @info "IAS Optimization i = $i"
 
-            # Update x
-            update_x!(enkf, X_forecast_loop, perturbed_obs, ĈX_op, enkf.θ, t, X_analysis, verbose)
+        copy!(θold, enkf.θ)
+        verbose && @info "θ copied"
 
-            verbose && @info "x updated"
-            # Update theta
-            update_θ!(enkf, X_analysis, enkf.θ, verbose)
+        # Update x
+        update_x!(enkf, X_forecast_loop, perturbed_obs, ĈX_op, enkf.θ, t, X_analysis, verbose)
 
-            if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
-                break
-            end
-        end
-    else
-        enkf.θ .= rand(enkf.dist, enkf.sys.Ns, enkf.sys.Ne)
-        θold = zero(enkf.θ)
+        verbose && @info "x updated"
+        # Update theta
+        update_θ!(enkf, X_analysis, enkf.θ, verbose)
 
-        for _ = 1:enkf.Niter
-            copy!(θold, enkf.θ)
-
-            # Update theta
-            update_θ!(enkf, X_analysis, enkf.θ, verbose)
-
-            # Update x
-            update_x!(enkf, X_forecast_loop, perturbed_obs, ĈX_op, enkf.θ, t, X_analysis, verbose)
-
-            if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
-                break
-            end
+        if norm(enkf.θ - θold) / norm(θold) < enkf.rtolθ
+            break
         end
     end
     verbose && @info "Finished optimization loop."
