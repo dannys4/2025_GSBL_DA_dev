@@ -108,7 +108,6 @@ function HLocEnKF(
         θ,
         Δtdyn,
         Δtobs,
-        isθshared,
         isiterative,
         isfiltered,
         Niter,

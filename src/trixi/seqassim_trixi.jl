@@ -141,3 +141,27 @@ function seqassim_trixi(
         return statehist
     end
 end
+
+function seqassim_trixi(
+    data::SyntheticData,
+    Js::NTuple{N,Int},
+    ϵx::InflationType,
+    algos::NTuple{N,SeqFilter},
+    X::T,
+    args...;
+    kwargs...
+) where {N,T}
+    data = partition(data, Js)
+    X0 = X
+    X = T[X0]
+    aux = []
+    for j in 1:N
+        ret = seqassim_trixi(data[j], Js[j], ϵx, algos[j], X0, args...; kwargs...)
+        ret isa Tuple || (ret = (ret, nothing))
+        Xj = ret[1]
+        push!(aux, ret[2:end])
+        X0 = Xj[end]
+        append!(X, Xj[2:end])
+    end
+    X, aux
+end

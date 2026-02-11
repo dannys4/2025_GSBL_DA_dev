@@ -44,38 +44,52 @@ end
 
 Add a proportion of smooth periodic noise to the states, preserving positivity for certain _cons_ variables (e.g., rho, rho_e).
 """
-function positivity_preserving_noise1d(f0::SmoothPeriodic, initial_condition::Function, N_ens::Int, sys::TrixiSystem, pos_vars::AbstractVector{<:AbstractString}, noise_proportion::Float64, pos_transform=(exp, log))
+function positivity_preserving_noise1d(
+    f0::SmoothPeriodic, initial_condition::Function, N_ens::Int,
+    sys::TrixiSystem, pos_vars::AbstractVector{<:AbstractString},
+    noise_sigma::Float64; is_dirichlet::NTuple{2,Bool}=(true, true), pos_transform=(exp, log)
+)
     (; mesh, equations) = sys
     @assert mesh isa DGMultiMesh
     xq = mesh.md.xq
     xgrid = GridFromMesh(sys)
+    x0, x1 = extrema(mesh.md.VX)
     Nvar = nvariables(equations)
     grid_shape = size(xq)
+
     pos_var_flags = in.(Trixi.varnames(cons2prim, equations), (pos_vars,))
     if !any(pos_var_flags)
         @warn "No positive variables found!"
     end
-    x0_quad = map(x -> initial_condition(x, 0., equations), xq) # Initial condition evaluated on the quad nodes
-    X0 = zeros(Nvar, grid_shape..., N_ens)
+    x0_quad = map(x -> cons2prim(initial_condition(x, 0., equations), equations), xq) # Initial condition evaluated on the quad nodes
     transforms = [flag ? pos_transform : (identity, identity) for flag in pos_var_flags]
-    @inbounds for ens_idx in 1:N_ens
+    noise_levels = ntuple(Nvar) do var_idx
+        max_var = maximum(x[var_idx] for x in x0_quad)
+        _, inverse_map = transforms[var_idx]
+        inverse_map(max_var)
+    end
+    X0 = zeros(Nvar, grid_shape..., N_ens)
+    noise_arr = similar(X0)
+    for ens_idx in 1:N_ens
         regenerate!(f0)
-        X0_i = selectdim(X0, ndims(X0), ens_idx)
+        X0_slice = selectdim(X0, ndims(X0), ens_idx)
         out_f0 = f0(xgrid)
         out_f0 = permutedims(reshape(out_f0, grid_shape..., Nvar), (3, 1, 2))
-        copy!(X0_i, out_f0)
+        copy!(X0_slice, out_f0)
+        copy!(selectdim(noise_arr, ndims(X0), ens_idx), out_f0)
         for c_idx in CartesianIndices(x0_quad)
             node_idx, elem_idx = Tuple(c_idx)
-            x0_quad_node = x0_quad[c_idx]
-            x0_prim = cons2prim(x0_quad_node, equations)
+            x0_prim = x0_quad[c_idx]
             for var_idx in 1:Nvar
                 forward_map, inverse_map = transforms[var_idx]
+                x0 = X0_slice[var_idx, node_idx, elem_idx]
+                x0_noise = noise_levels[var_idx] * x0
                 new_ens_val = forward_map(
-                    (1 - noise_proportion) * inverse_map(x0_prim[var_idx]) + noise_proportion * X0_i[var_idx, node_idx, elem_idx]
+                    inverse_map(x0_prim[var_idx]) + noise_sigma * x0_noise
                 )
-                X0_i[var_idx, node_idx, elem_idx] = new_ens_val
+                X0_slice[var_idx, node_idx, elem_idx] = new_ens_val
             end
         end
     end
-    reshape(X0, :, N_ens)
+    reshape(X0, :, N_ens), reshape(noise_arr, :, N_ens)
 end

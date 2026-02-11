@@ -34,10 +34,11 @@ function initial_condition_shu_osher(x::Real, t, equations::CompressibleEulerEqu
     p_left = 31 / 3
 
     # Replaced v_right = 0 to v_right = 0.5 to avoid positivity issues.
+    rho_right = 1 + 1 / 5 * sin(5 * x[1])
     v_right = 0.5
     p_right = 1.0
 
-    rho = ifelse(x > x0, 1 + 1 / 5 * sin(5 * x[1]), rho_left)
+    rho = ifelse(x > x0, rho_right, rho_left)
     v = ifelse(x > x0, v_right, v_left)
     p = ifelse(x > x0, p_right, p_left)
 

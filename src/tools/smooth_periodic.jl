@@ -6,31 +6,34 @@ struct SmoothPeriodic
     L::Float64
     α::Float64
     ĉ::Vector{ComplexF64}
+    is_dirichlet::Bool
 end
 
-function SmoothPeriodic(x::Vector{Float64}, α; L=1.0, Nvar::Int64=1)
+function SmoothPeriodic(x::Vector{Float64}, α; L=1.0, Nvar::Int64=1, is_dirichlet=false)
     N = length(x)
     ĉ = zeros(ComplexF64, Nvar * N)
 
     for k = 1:N
         for l = 1:Nvar
-            ĉ[(l-1)*N+k] = (randn() + im * randn()) * exp(-0.5 * k^α)
+            noise = (im * randn()) + (is_dirichlet ? 0. : randn())
+            ĉ[(l-1)*N+k] = noise * exp(-0.5 * k^α)
         end
     end
 
-    return SmoothPeriodic(N, Nvar, L, α, ĉ)
+    return SmoothPeriodic(N, Nvar, L, α, ĉ, is_dirichlet)
 end
 
-function SmoothPeriodic(N::Int64, α; L=1.0, Nvar::Int64=1)
+function SmoothPeriodic(N::Int64, α; is_dirichlet=false, L=1.0, Nvar::Int64=1)
     ĉ = zeros(ComplexF64, Nvar * N)
 
     for k = 1:N
         for l = 1:Nvar
-            ĉ[(l-1)*N+k] = (randn() + im * randn()) * exp(-0.5 * k^α)
+            noise = (im * randn()) + (is_dirichlet ? 0. : randn())
+            ĉ[(l-1)*N+k] = noise * exp(-0.5 * k^α)
         end
     end
 
-    return SmoothPeriodic(N, Nvar, L, α, ĉ)
+    return SmoothPeriodic(N, Nvar, L, α, ĉ, is_dirichlet)
 end
 
 (f::SmoothPeriodic)(x::Real) =
@@ -58,12 +61,12 @@ function (f::SmoothPeriodic)(xgrid::AbstractVector)
     f(out, xgrid)
     return out
 end
-# = sum(k -> real(f.ĉ[k] * exp(im * 2 * π * (k - 1) * x / f.L)), 1:f.N)
 
 function regenerate!(f::SmoothPeriodic)
     for k = 1:f.N
         for l = 1:f.Nvar
-            f.ĉ[(l-1)*f.N+k] = (randn() + im * randn()) * exp(-0.5 * k^f.α)
+            noise = im * randn() +  + (f.is_dirichlet ? 0. : randn())
+            f.ĉ[(l-1)*f.N+k] = noise * exp(-0.5 * k^f.α)
         end
     end
 end
