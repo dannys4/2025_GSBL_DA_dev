@@ -12,7 +12,7 @@ $(TYPEDFIELDS)
 """
 
 struct HLocEnKF{
-    LT<:Union{<:Localization,Nothing},
+    LT<:Union{<:AbstractLocalization,Nothing},
     ThetaT<:AbstractFlowTheta,
     ThetaSpaceT<:Union{Vector{Float64},Matrix{Float64}},
     GT<:Function,

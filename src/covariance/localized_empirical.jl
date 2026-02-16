@@ -34,10 +34,11 @@ function localization_elementwise_mul(A::AbstractMatrix, B::AbstractMatrix)
     A .* B
 end
 
-function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matrix=true, workspace_sparsity=nothing)
+function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::AbstractLocalization; with_matrix=true, workspace_sparsity=nothing)
     Nx, Ne = size(X)
     μX = vec(mean(X; dims=2))
     center_X = X .- μX
+    construct_mask!(Loc, center_X)
 
     CX = nothing
     CXloc = nothing
@@ -45,13 +46,15 @@ function LocalizedEmpiricalCov(X::Matrix{Float64}, Loc::Localization; with_matri
 
     if with_matrix
         CX = (center_X * center_X') / (Ne - 1)
-        CXloc = localization_elementwise_mul(Loc.ρX, CX)
+        mask = get_localization_mask(Loc)
+        CXloc = localization_elementwise_mul(mask, CX)
     else
+        # throw(ArgumentError("ShockLocalization only supports with_matrix right now"))
         workspace_size = size(center_X)
         X_mul_U = if isnothing(workspace_sparsity)
             similar(μX, workspace_size)
         else
-            ArgumentError("TODO: Support sparse workspace")
+            throw(ArgumentError("TODO: Support sparse workspace"))
             # sparsevec(workspace_sparsity, ones(length(workspace_sparsity)), length(μX))
         end
         Localize_Mul = similar(μX, workspace_size)
@@ -69,7 +72,8 @@ get_matrix(X::AbstractMatrix) = X
 
 function __inner_prod(C::LocalizedEmpiricalCov, u::AbstractVector)
     ret = zero(eltype(u))
-    localization_mat = get_matrix(C.Loc.ρX)
+    mask = get_localization_mask(C.Loc)
+    localization_mat = get_matrix(mask)
     ret = Vector{Float64}(undef, C.Ne)
     tmp = similar(u, Float64)
     for ens_idx in 1:C.Ne
@@ -106,7 +110,8 @@ function cov_mul!(
                 X_mul_U[state_idx, ens_idx] = Ĉ.center_X[state_idx, ens_idx] * u_val
             end
         end
-        mul!(Localize_Mul, Ĉ.Loc.ρX, X_mul_U, α, false)
+        mask = get_localization_mask(Ĉ.Loc.ρX)
+        mul!(Localize_Mul, mask, X_mul_U, α, false)
         for state_idx in eachindex(v)
             for ens_idx in axes(Ĉ.center_X, 2)
                 v[state_idx] = muladd(Ĉ.center_X[state_idx, ens_idx], Localize_Mul[state_idx, ens_idx], v[state_idx])
