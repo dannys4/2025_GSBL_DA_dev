@@ -83,21 +83,22 @@ struct SmoothSigmoid{D_shift<:UnivariateDistribution,D_scale<:UnivariateDistribu
     right_vals::Vector{Float64}
     function SmoothSigmoid(
         x_lo::Real, x_hi::Real,
-        left_vals::Vector{Float64}, right_vals::Vector{Float64},
+        left_vals::AbstractVector{Float64}, right_vals::AbstractVector{Float64};
         shift_dist::Union{Nothing, <:UnivariateDistribution} = nothing,
-        scale_dist::Union{Nothing, <:UnivariateDistribution} = nothing
+        scale_dist::Union{Nothing, <:UnivariateDistribution} = nothing,
+        shift_mean::Float64 = 0.5, shift_scale::Float64 = 0.15
     )
         length(left_vals) == length(right_vals) || throw(ArgumentError("Need the left and right values to be same length"))
         Nvar = length(left_vals)
         if isnothing(shift_dist)
-            shift_dist = (x_hi - x_lo) * Truncated(Normal(0.5, 0.15), 0., 1.) + x_lo
+            shift_dist = (x_hi - x_lo) * Truncated(Normal(shift_mean, shift_scale), 0., 1.) + x_lo
         end
         if isnothing(scale_dist)
             scale_dist = LogNormal(0, 1/2)
         end
         shifts, scales = rand(shift_dist, Nvar), rand(scale_dist, Nvar)
         D_1, D_2 = typeof(shift_dist), typeof(scale_dist)
-        new{D_1, D_2}(shifts, scales, x_lo, x_hi, shift_dist, scale_dist, left_vals, right_vals)
+        new{D_1, D_2}(shifts, scales, x_lo, x_hi, shift_dist, scale_dist, collect(left_vals), collect(right_vals))
     end
 end
 
