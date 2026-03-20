@@ -12,7 +12,7 @@ function sol2vec!(
         var_idxs = ((node_idx-1)*Nvar+1):(node_idx*Nvar)
         x_vec[var_idxs] .= node_vals
     end
-    nothing
+    x_vec
 end
 
 recurse_eltype(::Type{<:AbstractArray{T}}) where {T} = T
@@ -22,13 +22,13 @@ recurse_eltype(::A) where {A<:AbstractArray} = recurse_eltype(A)
 function sol2vec(x_sol::AbstractMatrix, equations::Trixi.AbstractEquations{1,__D}; g::Function=cons2prim) where {__D}
     x_vec = Vector{recurse_eltype(x_sol)}(undef, length(x_sol) * __D)
     sol2vec!(x_vec, x_sol, equations; g)
-    return x_vec
+    x_vec
 end
 
 function sol2vec(x_sol::AbstractMatrix, equations::Trixi.AbstractEquations{2,Nvar}; g::Function=cons2prim) where {Nvar}
     x_vec = Vector{Float64}(undef, Nvar * length(x_sol))
     sol2vec!(x_vec, x_sol, equations; g)
-    return x_vec
+    x_vec
 end
 
 function sol2vec(x_sol, sys::TrixiSystem; kwargs...)
@@ -52,13 +52,13 @@ function vec2sol!(
             x_sol[node_idx, elem_idx] = g(SVector{Nvar}(node), equations)
         end
     end
-    nothing
+    x_sol
 end
 
 function vec2sol(x_vec::AbstractVector, equations::Trixi.AbstractEquations, semi::Trixi.AbstractSemidiscretization; g::Function=prim2cons)
     x_sol = Trixi.allocate_coefficients(Trixi.mesh_equations_solver_cache(semi)...)
     vec2sol!(x_sol, x_vec, equations; g=g)
-    return x_sol
+    x_sol
 end
 
 function vec2sol(x_vec, sys::TrixiSystem)

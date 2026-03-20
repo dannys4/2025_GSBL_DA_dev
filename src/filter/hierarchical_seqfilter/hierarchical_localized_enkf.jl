@@ -76,7 +76,7 @@ function HLocEnKF(
     Ne::Int64,
     ϵy::InflationType,
     sys::ObsConstraintSystem,
-    Loc::Localization,
+    Loc::AbstractLocalization,
     dist::GeneralizedGamma,
     θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
@@ -123,7 +123,7 @@ function HLocEnKF(
     Ne::Int64,
     ϵy::InflationType,
     sys::ObsConstraintSystem,
-    Loc::Localization,
+    Loc::AbstractLocalization,
     dist::GeneralizedGamma,
     θ::Union{Vector{Float64},Matrix{Float64}},
     Δtdyn,
@@ -172,4 +172,4 @@ function Base.show(io::IO, enkf::HLocEnKF)
     )
 end
 
-getĈX(enkf::HLocEnKF{<:Localization}, X; kwargs...) = LocalizedEmpiricalCov(X, enkf.Loc; kwargs...)
+getĈX(enkf::HLocEnKF{<:AbstractLocalization}, X; kwargs...) = LocalizedEmpiricalCov(X, enkf.Loc; kwargs...)

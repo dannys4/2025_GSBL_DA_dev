@@ -21,6 +21,7 @@ function seqassim_trixi(
     cfl=0.2,
     store_state_path=nothing,
     verbose=false,
+    ode_transforms::Union{Nothing,<:NamedTuple}=nothing,
     ode_kwargs...
 )
     sim_id = Int(rand(UInt32))
@@ -54,6 +55,9 @@ function seqassim_trixi(
     end
     θ = nothing
 
+    to_solver_transform = isnothing(ode_transforms) ? identity : ode_transforms.to_solver_transform
+    from_solver_transform = isnothing(ode_transforms) ? identity : ode_transforms.from_solver_transform
+
     # Run filtering algorithm
     @showprogress "Filtering using $(algo_str)..." for i = eachindex(Acycle)
         # Forecast
@@ -61,7 +65,8 @@ function seqassim_trixi(
         function prob_func(prob, j, repeat)
             # At this point, the vector x is provided at the Gauss-Legendre nodes
             # Converting primitive to constrained variables
-            vec2sol!(x_quad, @view(X[:, j]), sys.equations, g=prim2cons)
+            Xj = @view X[:, j]
+            vec2sol!(x_quad, Xj, sys.equations, g=(x,eqns) -> prim2cons(to_solver_transform(x), eqns))
             # We need to move them to the Lobatto-Legendre nodes
             get_interp_node_vals!(sys.dg, x_quad, x_itp)
             ret = remake(prob, u0=x_itp, tspan=tspan)
@@ -84,8 +89,9 @@ function seqassim_trixi(
         @inbounds for i = 1:Ne
             # Interpolate the solution from the solver back to the Gauss-Legendre nodes and reshaping
             get_quadrature_node_vals!(sys.dg, x_quad, sim[i])
+            Xi = @view X[:, i]
             # Perform data assimilation on the primitive variables at quadrature nodes
-            sol2vec!(@view(X[:, i]), x_quad, sys.equations; g=cons2prim)
+            sol2vec!(Xi, x_quad, sys.equations; g=(x,eqns)->from_solver_transform(cons2prim(x, eqns)))
         end
 
         # Assimilation # Get real measurement # Fix this later # Things are shifted in data.yt

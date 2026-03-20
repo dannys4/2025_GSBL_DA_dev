@@ -1,10 +1,13 @@
 export generate_data_trixi
 
-function generate_timestep!(u_quad, u_itp, u, prob, tspan, sys, ode_solver; ode_kwargs...)
+function generate_timestep!(u_quad, u_itp, u, prob, tspan, sys, ode_solver; ode_transforms = nothing, ode_kwargs...)
     # Run dynamics and save results
 
+    to_solver_transform = isnothing(ode_transforms) ? identity : ode_transforms.to_solver_transform
+    from_solver_transform = isnothing(ode_transforms) ? identity : ode_transforms.from_solver_transform
+
     # At this point, the vector x is provided at the Gauss-Legendre nodes
-    vec2sol!(u_quad, u, sys.equations; g=prim2cons)
+    vec2sol!(u_quad, u, sys.equations; g=(x,eqns)->prim2cons(to_solver_transform(x), eqns))
     # x_quad exists on quadrature nodes. Move to itp points
     get_interp_node_vals!(sys.dg, u_quad, u_itp)
 
@@ -17,7 +20,7 @@ function generate_timestep!(u_quad, u_itp, u, prob, tspan, sys, ode_solver; ode_
 
     # Interpolate the solution from the solver back to the quadrature nodes and reshaping
     get_quadrature_node_vals!(sys.dg, u_quad, sol.u[end])
-    sol2vec!(u, u_quad, sys.equations; g=cons2prim)
+    sol2vec!(u, u_quad, sys.equations; g=from_solver_transform ∘ cons2prim)
 end
 
 function generate_data_trixi(model::Model, u0, Tf::Int64, sys::TrixiSystem; (true_soln!)=nothing, ode_solver=SSPRK43(), cfl=0.2, ode_kwargs...)
