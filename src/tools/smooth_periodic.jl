@@ -1,7 +1,9 @@
 using Distributions, Random
-export SmoothPeriodic, regenerate!
+export SmoothPeriodic, SmoothSigmoid, regenerate!
 
-struct SmoothPeriodic
+abstract type AbstractSmoothInitialization end
+
+struct SmoothPeriodic <: AbstractSmoothInitialization
     N::Int64
     Nvar::Int64
     L::Float64
@@ -72,7 +74,7 @@ function regenerate!(f::SmoothPeriodic)
     end
 end
 
-struct SmoothSigmoid{D_shift<:UnivariateDistribution,D_scale<:UnivariateDistribution}
+struct SmoothSigmoid{D_shift<:UnivariateDistribution,D_scale<:UnivariateDistribution} <: AbstractSmoothInitialization
     shifts::Vector{Float64}
     scales::Vector{Float64}
     x_lo::Float64

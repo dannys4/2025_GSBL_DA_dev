@@ -70,7 +70,8 @@ include("trixi/seqassim_trixi.jl")
 # Add equation systems
 include("equations/linear_advection.jl") # Linear advection
 include("equations/inviscid_burgers.jl") # Inviscid Burgers
-include("equations/euler.jl") # Shu-Osher equation
+include("equations/euler.jl") # Euler equation
+include("equations/sod_shock.jl") # Euler equation
 include("equations/kpp.jl") # KPP equation
 
 end # module HierarchicalDA
