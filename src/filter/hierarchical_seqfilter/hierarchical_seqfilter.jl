@@ -24,19 +24,14 @@ function (enkf::HierarchicalSeqFilter)(
 
     perturbed_obs = enkf.obs_workspace
     @assert size(perturbed_obs) == (Ny, Ne)
-    randn!(perturbed_obs)
+    perturbed_obs .= ystar
     # Generate observational noise samples
-    if enkf.ϵy isa AdditiveInflation
-        lmul!(enkf.ϵy.σ, perturbed_obs)
-        if has_nonzero_mean(enkf.ϵy)
-            perturbed_obs .-= enkf.ϵy.m
-        end
-        perturbed_obs .+= ystar
-    end
+    enkf.ϵy(perturbed_obs, t, true)
 
     # workspace_sparsity = findall(isnan, enkf.sys.H' * fill(NaN, size(enkf.sys.H, 1)))
     verbose && @info "Getting Covariance..."
     ĈX_op = getĈX(enkf, X_forecast; with_matrix=!enkf.isiterative)
+    enkf.sys.Cϵ = LinearMap(get_cov(enkf.ϵy, t))
 
     # Initial guess?
     fill!(enkf.θ, enkf.θinit)

@@ -45,7 +45,7 @@ end
 Add a proportion of smooth periodic noise to the states, preserving positivity for certain _cons_ variables (e.g., rho, rho_e).
 """
 function positivity_preserving_noise1d(
-    f0::AbstractSmoothInitialization, initial_condition::Function, N_ens::Int,
+    f0::AbstractFilterStateInitialization, initial_condition::Function, N_ens::Int,
     sys::TrixiSystem, pos_vars::AbstractVector{<:AbstractString},
     noise_sigma::Float64; is_dirichlet::NTuple{2,Bool}=(true, true), pos_transform=(exp, log)
 )

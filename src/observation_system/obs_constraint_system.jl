@@ -27,17 +27,17 @@ mutable struct ObsConstraintSystem{
     MatVecCacheT<:Union{Nothing,NTuple{2,Vector{Float64}}}
 } <: LinearMaps.LinearMap{Float64}
     # To update the covariance matrix for the state
-    CX::CXT
     const Nx::Int64
     const Ny::Int64
     const Nz::Int64
     const H::HT
     const S::ST
     const Cθ::CθT
-    const Cϵ::CϵT
     const cache_YS::CacheT
     const cache_sys::SysCacheT
     const cache_matvec::MatVecCacheT
+    CX::CXT
+    Cϵ::CϵT
 end
 
 function ObsConstraintSystem(
@@ -53,7 +53,7 @@ function ObsConstraintSystem(
     Nz = size(S, 1)
     cache_YS, cache_sys = cache_matrix ? ObsConstraintSysCache(Ny, Nz) : (nothing, nothing)
     cache_matvec = isiterative ? (Vector{Float64}(undef, Nx), Vector{Float64}(undef, Nx)) : nothing
-    return ObsConstraintSystem(CX, Nx, Ny, Nz, H, S, Cθ, Cϵ, cache_YS, cache_sys, cache_matvec)
+    return ObsConstraintSystem(Nx, Ny, Nz, H, S, Cθ, cache_YS, cache_sys, cache_matvec, CX, Cϵ)
 end
 
 Base.size(sys::ObsConstraintSystem) = (sys.Ny + sys.Nz, sys.Ny + sys.Nz)

@@ -98,16 +98,17 @@ function seqassim_trixi(
         ystar = data.yt[:, Acycle[i]]
         # Replace at some point by realobserve(model.h, t0+i*model.Δtobs, ens)
         # Perform inflation for each ensemble member
-        ϵx(X, 1, Nx)
+        t_i = i * algo.Δtobs
+        ϵx(X, t_i)
 
         # Compute measurements
 
         # Generate posterior samples.
         # Note that the additive inflation of the observation is applied within the sequential filter.
         if algo isa HierarchicalSeqFilter
-            X, θ = algo(X, ystar, i * algo.Δtobs, verbose)
+            X, θ = algo(X, ystar, t_i, verbose)
         else
-            X = algo(X, ystar, i * algo.Δtobs, verbose)
+            X = algo(X, ystar, t_i, verbose)
         end
 
         # Filter state

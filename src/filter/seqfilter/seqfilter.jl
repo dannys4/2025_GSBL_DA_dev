@@ -8,23 +8,14 @@ function update_x!(enkf::SeqFilter, X_forecast::AbstractMatrix{Float64}, ystar::
 
     # Generate observational noise samples
     errs = repeat(ystar, 1, Ne)
-    if enkf.ϵy isa AdditiveInflation
-        if has_nonzero_mean(enkf.ϵy)
-            errs .-= enkf.ϵy.m
-        end
-        errs_samp = zeros(Ny)
-        for j in axes(errs, 2)
-            randn!(errs_samp)
-            mul!(@view(errs[:, j]), enkf.ϵy.σ, errs_samp, true, true)
-        end
-        # E .= enkf.ϵy.σ * randn(Ny, Ne) .+ enkf.ϵy.m
-    end
+    enkf.ϵy(errs, t, true)
 
     # Only form covariance mat iff enkf is not iterative
     # workspace_sparsity = findall(isnan, enkf.sys.H' * fill(NaN, size(enkf.sys.H, 1)))
     ĈX_op = getĈX(enkf, X_forecast; with_matrix=!enkf.isiterative)
-    # Update covariance matrix
+    # Update covariance matrices
     enkf.sys.CX = ĈX_op
+    enkf.sys.Cϵ = LinearMap(get_cov(enkf.ϵy, t))
 
     if enkf.isiterative
         # Creates linear map object

@@ -1,9 +1,9 @@
 using Distributions, Random
-export SmoothPeriodic, SmoothSigmoid, regenerate!
+export SmoothPeriodic, SmoothSigmoid, regenerate!, RandomShockInitialization
 
-abstract type AbstractSmoothInitialization end
+abstract type AbstractFilterStateInitialization end
 
-struct SmoothPeriodic <: AbstractSmoothInitialization
+struct SmoothPeriodic <: AbstractFilterStateInitialization
     N::Int64
     Nvar::Int64
     L::Float64
@@ -74,7 +74,44 @@ function regenerate!(f::SmoothPeriodic)
     end
 end
 
-struct SmoothSigmoid{D_shift<:UnivariateDistribution,D_scale<:UnivariateDistribution} <: AbstractSmoothInitialization
+function sigmoid(t)
+    (1 - (t > 0 ? exp(-t) / (1 + exp(- t)) : 1/(1 + exp(t))))
+end
+
+struct RandomShockInitialization{DLT<:Distribution, DRT<:Distribution, DST<:UnivariateDistribution} <: AbstractFilterStateInitialization
+    Nvar::Int
+    left_vals_dist::DLT
+    right_vals_dist::DRT
+    shock_loc_dist::DST
+    values::Vector{Float64} # (shock_loc, left_values, right_values)
+    function RandomShockInitialization(left_vals_dist::_DLT, right_vals_dist::_DRT, shock_loc_dist::_DST) where {_DLT, _DRT, _DST}
+        Nvar = length(left_vals_dist)
+        if length(right_vals_dist) != Nvar
+            throw(ArgumentError("Expected length(left_vals_dist) == length(right_vals_dist), got $Nvar and $(length(right_vals_dist))"))
+        end
+        vals = Vector{Float64}(undef, 2*Nvar + 1)
+        new{_DLT,_DRT,_DST}(Nvar, left_vals_dist, right_vals_dist, shock_loc_dist, vals)
+    end
+end
+
+function regenerate!(f::RandomShockInitialization)
+    f.values .= reduce(vcat, rand(d) for d in (f.shock_loc_dist, f.left_vals_dist, f.right_vals_dist))
+end
+
+function (f::RandomShockInitialization)(out::AbstractVector, xgrid::AbstractVector)
+    (;Nvar, values) = f
+    out_re = reshape(out, Nvar, length(xgrid))
+    shock_loc, left_vals, right_vals = values[1], values[1 .+ (1:Nvar)], values[(1 + Nvar) .+ (1:Nvar)]
+    SIGMOID_SLOPE = 50
+    for (j,xj) in enumerate(xgrid)
+        out_j = @view out_re[:,j]
+        sigmoid_evals = sigmoid(SIGMOID_SLOPE * (xj .- shock_loc))
+        out_j .= sigmoid_evals * (right_vals - left_vals) + left_vals
+    end
+    out
+end
+
+struct SmoothSigmoid{D_shift<:UnivariateDistribution,D_scale<:UnivariateDistribution} <: AbstractFilterStateInitialization
     shifts::Vector{Float64}
     scales::Vector{Float64}
     x_lo::Float64
@@ -107,10 +144,6 @@ end
 function regenerate!(f::SmoothSigmoid)
     rand!(f.shift_dist, f.shifts)
     rand!(f.scale_dist, f.scales)
-end
-
-function sigmoid(t)
-    (1 - (t > 0 ? exp(-t) / (1 + exp(- t)) : 1/(1 + exp(t))))
 end
 
 function (f::SmoothSigmoid)(out::AbstractVector, xgrid::AbstractVector)

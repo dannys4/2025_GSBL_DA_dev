@@ -84,6 +84,7 @@ function setup_euler(
         surface_integral=SurfaceIntegralWeakForm(surface_flux),
         volume_integral=volume_integral,
     )
+
     initial_condition_fcn = nothing
     if initial_condition == :shu_osher
         initial_condition_fcn = initial_condition_shu_osher

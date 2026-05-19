@@ -9,7 +9,7 @@ mutable struct ObsSystem{M,W,HT,EpsT} <: LinearMaps.LinearMap{Float64}
     const Nx::Int64
     const Ny::Int64
     const H::HT
-    const Cϵ::EpsT
+    Cϵ::EpsT
     # To update the covariance matrix for the state
     CX::M
     # Workspaces for iterative scheme

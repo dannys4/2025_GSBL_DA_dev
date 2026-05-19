@@ -36,6 +36,8 @@ struct EnKF <: SeqFilter
     isfiltered::Bool
 end
 
+get_sys(e::EnKF)::ObsSystem = e.sys
+
 function EnKF(
     G::Function,
     Ne::Int64,

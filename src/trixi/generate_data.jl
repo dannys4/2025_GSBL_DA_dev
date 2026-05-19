@@ -62,19 +62,17 @@ function generate_data_trixi(model::Model, u0, Tf::Int64, sys::TrixiSystem; (tru
             true_soln!(u, xgrid, next_t)
         end
 
-        model.ϵx(u)
+        model.ϵx(u, next_t)
 
         # Collect observations
         tt[time_idx] = time_idx * model.Δtobs
         copy!(@view(ut[:, time_idx]), u)
         copy!(@view(bt[:, time_idx]), model.F.h(u, tt[time_idx]))
-
-        if model.ϵy isa AdditiveInflation
-            if has_nonzero_mean(model.ϵy)
-                y[:, time_idx] .+= model.ϵy.m
-            end
-            mul!(@view(bt[:, time_idx]), model.ϵy.σ, randn(model.Ny), true, true)
+        if model.ϵy isa RelativeAdditiveInflation
+            model.ϵy.times[time_idx] = tt[time_idx]
+            copy!(@view(model.ϵy.offsets[:,time_idx]), @view(bt[:, time_idx]))
         end
+        model.ϵy(@view(bt[:, time_idx]), tt[time_idx])
     end
     return SyntheticData(tt, model.Δtdyn, u0, ut, bt)
 end
