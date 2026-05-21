@@ -23,7 +23,7 @@ function generate_timestep!(u_quad, u_itp, u, prob, tspan, sys, ode_solver; ode_
     sol2vec!(u, u_quad, sys.equations; g=from_solver_transform ∘ cons2prim)
 end
 
-function generate_data_trixi(model::Model, u0, Tf::Int64, sys::TrixiSystem; (true_soln!)=nothing, ode_solver=SSPRK43(), cfl=0.2, ode_kwargs...)
+function generate_data_trixi(model::Model, u0, Tf::Int64, sys::TrixiSystem; (true_soln!)=nothing, ode_solver=SSPRK43(), cfl=0.2,  ode_transforms = nothing, ode_kwargs...)
     @assert model.Nx == size(u0, 1) "Error dimension of the input"
     ut = zeros(model.Nx, Tf)
 
@@ -56,6 +56,7 @@ function generate_data_trixi(model::Model, u0, Tf::Int64, sys::TrixiSystem; (tru
                 dense=false,
                 save_everystep=false,
                 callback=stepsize_callback,
+                ode_transforms,
                 ode_kwargs...
             )
         else
@@ -70,7 +71,7 @@ function generate_data_trixi(model::Model, u0, Tf::Int64, sys::TrixiSystem; (tru
         copy!(@view(bt[:, time_idx]), model.F.h(u, tt[time_idx]))
         if model.ϵy isa RelativeAdditiveInflation
             model.ϵy.times[time_idx] = tt[time_idx]
-            copy!(@view(model.ϵy.offsets[:,time_idx]), @view(bt[:, time_idx]))
+            copy!(@view(model.ϵy.cache_values[:,time_idx]), @view(bt[:, time_idx]))
         end
         model.ϵy(@view(bt[:, time_idx]), tt[time_idx])
     end

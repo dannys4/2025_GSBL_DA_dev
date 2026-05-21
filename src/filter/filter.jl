@@ -1,3 +1,5 @@
+export getĈX
+
 include("seqfilter/seqfilter.jl")
 include("seqfilter/enkf.jl")
 include("seqfilter/localized_enkf.jl")

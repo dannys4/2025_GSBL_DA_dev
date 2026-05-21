@@ -75,7 +75,11 @@ function regenerate!(f::SmoothPeriodic)
 end
 
 function sigmoid(t)
-    (1 - (t > 0 ? exp(-t) / (1 + exp(- t)) : 1/(1 + exp(t))))
+    if isinf(t)
+        return t > 0 ? 1. : 0.
+    else
+        (1 - (t > 0 ? exp(-t) / (1 + exp(- t)) : 1/(1 + exp(t))))
+    end
 end
 
 struct RandomShockInitialization{DLT<:Distribution, DRT<:Distribution, DST<:UnivariateDistribution} <: AbstractFilterStateInitialization
@@ -102,7 +106,7 @@ function (f::RandomShockInitialization)(out::AbstractVector, xgrid::AbstractVect
     (;Nvar, values) = f
     out_re = reshape(out, Nvar, length(xgrid))
     shock_loc, left_vals, right_vals = values[1], values[1 .+ (1:Nvar)], values[(1 + Nvar) .+ (1:Nvar)]
-    SIGMOID_SLOPE = 50
+    SIGMOID_SLOPE = 100
     for (j,xj) in enumerate(xgrid)
         out_j = @view out_re[:,j]
         sigmoid_evals = sigmoid(SIGMOID_SLOPE * (xj .- shock_loc))

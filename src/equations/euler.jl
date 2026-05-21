@@ -48,9 +48,13 @@ function setup_euler(
     polydeg,
     cells_per_dimension;
     initial_condition=:shu_osher,
+    bcs = :dirichlet
 )
     if !(initial_condition in [:shu_osher, :sod])
         throw(ArgumentError("Unexpected initial condition $initial_condition"))
+    end
+    if !(bcs in [:zero_neumann, :dirichlet, nothing])
+        throw(ArgumentError("Unexpected boundary conditions $bcs"))
     end
     gamma_gas = 1.4
     equations = CompressibleEulerEquations1D(gamma_gas)
@@ -93,7 +97,16 @@ function setup_euler(
     else
         throw(ArgumentError("Unknown initial condition $(initial_condition)"))
     end
-    boundary_condition = BoundaryConditionDirichlet(initial_condition_fcn)
+    boundary_condition = if bcs == :dirichlet
+        BoundaryConditionDirichlet(initial_condition_fcn)
+    elseif bcs == :zero_neumann
+        BoundaryConditionNeumann(Returns(@SVector[0., 0., 0.]))
+    elseif isnothing(bcs)
+        boundary_condition_do_nothing
+    else
+        throw(ArgumentError("Unknown boundary condition $bcs"))
+    end
+
     boundary_conditions = (; :entire_boundary => boundary_condition)
 
     ###############################################################################
