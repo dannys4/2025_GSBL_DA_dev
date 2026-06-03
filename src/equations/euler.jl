@@ -30,16 +30,13 @@ function initial_condition_sod(
     x,
     t,
     equations::CompressibleEulerEquations1D,
-    u_L=(rho=1., v=0., p=1.),
-    u_R=(rho=0.125, v=0., p=0.1),
-    x0=0.5
+    prob_setup::SodShock = SodShock()
 )
-    GAMMA = 1.4
-    @assert equations.gamma == GAMMA
-    rho = ifelse(x[] < x0, u_L.rho, u_R.rho)
-    v = ifelse(x[] < x0, u_L.v, u_R.v)
-    p = ifelse(x[] < x0, u_L.p, u_R.p)
-    return prim2cons(SVector(rho, v, p), equations)
+    @assert equations.gamma == prob_setup.gamma
+    rho = ifelse(x[] < prob_setup.x0, prob_setup.state_L.rho, prob_setup.state_R.rho)
+    u = ifelse(x[] < prob_setup.x0, prob_setup.state_L.u, prob_setup.state_R.u)
+    P = ifelse(x[] < prob_setup.x0, prob_setup.state_L.P, prob_setup.state_R.P)
+    return prim2cons(SVector(rho, u, P), equations)
 end
 
 

@@ -61,6 +61,12 @@ function generate_data_trixi(model::Model, u0, Tf::Int64, sys::TrixiSystem; (tru
             )
         else
             true_soln!(u, xgrid, next_t)
+            if !isnothing(ode_transforms)
+                u_re = reshape(u, :, length(xgrid))
+                for col_idx in axes(u_re, 2)
+                    u_re[:,col_idx] .= ode_transforms.from_solver_transform(u_re[:,col_idx])
+                end
+            end
         end
 
         model.ϵx(u, next_t)

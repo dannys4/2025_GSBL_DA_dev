@@ -1,15 +1,15 @@
-export SodShock, sod_solution
+export SodShock, sod_solution!
 using LinearAlgebra
 using Base: vec
 
-struct SodState
+Base.@kwdef struct SodState
     rho::Float64
     u::Float64
     P::Float64
 end
 
 function Base.vec(state::SodState)
-    return [state.u, state.rho, state.P]
+    return [state.rho, state.u, state.P]
 end
 
 function P_3_identity(gamma::Float64, P_3::Float64, rho_L::Float64, P_L::Float64, rho_R::Float64, P_R::Float64)
@@ -87,21 +87,21 @@ function region_two(x::Float64, t::Float64, s::SodShock)
     rho_L, P_L = s.state_L.rho, s.state_L.P
     rho_2 = (((rho_L^gamma) / (gamma * P_L)) * ((u_2 - wave_loc)^2))^(1 / (gamma - 1))
     P_2 = (rho_2^gamma) * P_L / (rho_L^gamma)
-    return SodState(u_2, rho_2, P_2)
+    return SodState(rho = rho_2, u = u_2, P = P_2)
 end
 
 function region_three(x::Float64, t::Float64, s::SodShock)
     u_3 = velocity_4(s) # u_3 = u_4 by construction
     P_3 = s.P_3
     rho_3 = s.state_L.rho * ((P_3 / s.state_L.P) ^ (1 / s.gamma))
-    return SodState(u_3, rho_3, P_3)
+    return SodState(rho = rho_3, u = u_3, P = P_3)
 end
 
 function region_four(x::Float64, t::Float64, s::SodShock)
     u_4 = velocity_4(s)
     P_4 = s.P_3 # p_4 = p_3 by construction
     rho_4 = density_4(s)
-    return SodState(u_4, rho_4, P_4)
+    return SodState(rho = rho_4, u = u_4, P = P_4)
 end
 
 function region_five(x::Float64, t::Float64, s::SodShock)
@@ -109,9 +109,9 @@ function region_five(x::Float64, t::Float64, s::SodShock)
 end
 
 # %%
-function sod_solution(xgrid::AbstractVector{Float64}, t::Float64, s::SodShock)
+function sod_solution!(out_vec::Vector{Float64}, xgrid::AbstractVector{Float64}, t::Float64, s::SodShock)
     @assert(issorted(xgrid))
-    out = Matrix{Float64}(undef, 3, length(xgrid))
+    out = reshape(out_vec, 3, length(xgrid))#Matrix{Float64}(undef, 3, length(xgrid))
     bc_L, bc_R = vec(s.state_L), vec(s.state_R)
     if t <= eps()
         x0_bdry = findfirst(xgrid .> s.x0)
@@ -145,5 +145,6 @@ function example_sod_solution_eval()
     s = SodShock(gamma, x0, SodState(1., 0., 1.), SodState(0.125, 0., 0.1), 0.30310)
 
     t_0 = 0.1
-    eval_sod(xgrid, t_0, s)
+    out_sod = Matrix{Float64}(undef, 3, length(xgrid))
+    sod_solution!(vec(out_sod), xgrid, t_0, s)
 end
